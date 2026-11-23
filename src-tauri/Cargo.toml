@@ -1,0 +1,41 @@
+[package]
+name = "sectator"
+version = "0.1.0-alpha.1"
+description = "Local-first torrent meta-search engine"
+edition = "2021"
+rust-version = "1.85"
+
+[lib]
+name = "sectator_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync", "net"] }
+tokio-util = "0.7"
+async-trait = "0.1"
+reqwest = { version = "0.13", default-features = false, features = ["json", "form", "gzip", "brotli", "http2", "rustls", "socks"] }
+scraper = "0.29"
+quick-xml = "0.42"
+rusqlite = { version = "0.43", features = ["bundled"] }
+regex = "1"
+once_cell = "1"
+url = "2"
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+thiserror = "2"
+
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true

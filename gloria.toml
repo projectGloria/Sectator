@@ -1,0 +1,9 @@
+id = "Sectator"
+name = "Sectator"
+version = "0.1.0-alpha.1"
+main_exe = "sectator.exe"
+icon = "src-tauri/icons/icon.ico"
+accent = "#22d3ee"
+description = "Local-first torrent meta-search engine"
+needs_webview2 = true
+data_folders = ["%APPDATA%\dev.gloria.sectator", "%LOCALAPPDATA%\dev.gloria.sectator"]

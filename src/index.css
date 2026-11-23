@@ -1,0 +1,76 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg: #0a0b0d;
+  --color-panel: #101216;
+  --color-raised: #161920;
+  --color-line: #22262e;
+  --color-fg: #e5e7eb;
+  --color-dim: #8b93a1;
+  --color-faint: #5b6270;
+  --color-accent: #22d3ee;
+  --color-good: #34d399;
+  --color-warn: #fbbf24;
+  --color-bad: #f87171;
+  --font-sans: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "Cascadia Mono", "Cascadia Code", Consolas, ui-monospace, monospace;
+}
+
+html,
+body,
+#root {
+  width: 100vw;
+  height: 100vh;
+  margin: 0;
+  overflow: hidden;
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Thin themed scrollbars; overlay-style gutter so layout never shifts. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #2b303a transparent;
+}
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #2b303a;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3a404c;
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.chrome {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 1px solid var(--color-accent);
+  outline-offset: 1px;
+}
