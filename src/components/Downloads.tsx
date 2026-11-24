@@ -8,8 +8,10 @@ import {
   CheckCircle2,
   Clock,
   Download as DownloadIcon,
+  ExternalLink,
   FolderOpen,
   HardDrive,
+  ListOrdered,
   Loader2,
   Pause,
   Play,
@@ -88,6 +90,10 @@ interface Props {
 const COLS =
   "grid-cols-[minmax(0,1fr)_76px_52px_84px_84px_76px_64px_52px_120px_104px]";
 
+type ContextTarget =
+  | { kind: "download"; x: number; y: number; d: Download }
+  | { kind: "file"; x: number; y: number; hash: string; file: DownloadFile };
+
 export function Downloads({
   items,
   selected,
@@ -97,7 +103,24 @@ export function Downloads({
 }: Props) {
   const list = useRef<HTMLDivElement>(null);
   const [confirm, setConfirm] = useState<string | null>(null);
+  const [menu, setMenu] = useState<ContextTarget | null>(null);
   const current = items.find((d) => d.infoHash === selected) ?? null;
+
+  useEffect(() => {
+    if (!menu) return;
+    const close = () => setMenu(null);
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && close();
+    window.addEventListener("mousedown", close);
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("blur", close);
+    window.addEventListener("resize", close);
+    return () => {
+      window.removeEventListener("mousedown", close);
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("blur", close);
+      window.removeEventListener("resize", close);
+    };
+  }, [menu]);
 
   const act = (p: Promise<unknown>, ok?: string) =>
     p.then(
@@ -165,6 +188,14 @@ export function Downloads({
               key={d.infoHash}
               data-hash={d.infoHash}
               onClick={() => setSelected(sel ? null : d.infoHash)}
+              onDoubleClick={() => {
+                if (d.state !== "metadata") act(api.openDownload(d.infoHash));
+              }}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                setSelected(d.infoHash);
+                setMenu({ kind: "download", x: e.clientX, y: e.clientY, d });
+              }}
               className={`grid ${COLS} min-h-[38px] cursor-default items-center gap-2 border-b border-line/60 px-3 text-[12px] transition-colors duration-150 ${sel ? "bg-raised" : "hover:bg-raised/60"}`}
             >
               <div className="flex min-w-0 items-center gap-2.5">
@@ -213,6 +244,7 @@ export function Downloads({
               <div
                 className="flex justify-end gap-0.5"
                 onClick={(e) => e.stopPropagation()}
+                onDoubleClick={(e) => e.stopPropagation()}
               >
                 {confirm === d.infoHash ? (
                   <>
@@ -273,7 +305,20 @@ export function Downloads({
         })}
       </div>
       {current && (
-        <Details d={current} act={act} onClose={() => setSelected(null)} />
+        <Details
+          d={current}
+          act={act}
+          onClose={() => setSelected(null)}
+          onFileContext={(x, y, file) => setMenu({ kind: "file", x, y, hash: current.infoHash, file })}
+        />
+      )}
+      {menu && (
+        <ContextMenu
+          target={menu}
+          onClose={() => setMenu(null)}
+          act={act}
+          onRemove={(hash) => setConfirm(hash)}
+        />
       )}
     </div>
   );
@@ -283,10 +328,12 @@ function Details({
   d,
   act,
   onClose,
+  onFileContext,
 }: {
   d: Download;
   act: (p: Promise<unknown>, ok?: string) => void;
   onClose: () => void;
+  onFileContext: (x: number, y: number, file: DownloadFile) => void;
 }) {
   const [files, setFiles] = useState<DownloadFile[] | null>(null);
   const hash = d.infoHash;
@@ -335,6 +382,19 @@ function Details({
           {d.name}
         </span>
         <StateLabel d={d} label={label} tone={tone} />
+        <Button
+          tone="ghost"
+          className={`shrink-0 ${d.sequential ? "text-accent" : ""}`}
+          title="Download pieces in sequential order"
+          onClick={() =>
+            act(
+              api.setSequential(hash, !d.sequential),
+              !d.sequential ? "Sequential download enabled" : "Sequential download disabled",
+            )
+          }
+        >
+          <ListOrdered size={12} /> Sequential
+        </Button>
         <Button
           tone="ghost"
           className="shrink-0"
@@ -417,6 +477,11 @@ function Details({
                 wanted={f.wanted}
                 state={d.state}
                 onToggle={() => toggle([[f.index, !f.wanted]])}
+                onOpen={() => act(api.openDownloadFile(hash, f.index))}
+                onContext={(e) => {
+                  e.preventDefault();
+                  onFileContext(e.clientX, e.clientY, f);
+                }}
               />
             ))}
           </>
@@ -457,6 +522,8 @@ function FileRow({
   head,
   state,
   onToggle,
+  onOpen,
+  onContext,
 }: {
   name: string;
   size: number;
@@ -466,6 +533,8 @@ function FileRow({
   /** The download's state, to tell a file in progress from one waiting. */
   state?: DownloadState;
   onToggle: () => void;
+  onOpen?: () => void;
+  onContext?: (e: React.MouseEvent) => void;
 }) {
   const pct = size ? Math.floor((done / size) * 100) : 100;
   const complete = done >= size;
@@ -486,7 +555,9 @@ function FileRow({
               : "Waiting";
   return (
     <div
-      className={`grid grid-cols-[22px_16px_minmax(0,1fr)_120px_80px_86px] items-center gap-2 px-3 py-1 text-[12px] ${head ? "chrome border-b border-line/60 text-faint" : wanted ? "" : "text-faint"}`}
+      onDoubleClick={onOpen}
+      onContextMenu={onContext}
+      className={`grid grid-cols-[22px_16px_minmax(0,1fr)_120px_80px_86px] items-center gap-2 px-3 py-1 text-[12px] ${head ? "chrome border-b border-line/60 text-faint" : `cursor-default hover:bg-raised/60 ${wanted ? "" : "text-faint"}`}`}
     >
       <button
         type="button"
@@ -494,6 +565,7 @@ function FileRow({
         aria-checked={wanted}
         aria-label={head ? "Download all files" : `Download ${name}`}
         onClick={onToggle}
+        onDoubleClick={(e) => e.stopPropagation()}
         className={`flex h-3.5 w-3.5 items-center justify-center rounded-[3px] border transition-colors duration-150 focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-accent ${
           wanted
             ? "border-accent bg-accent text-on-accent hover:bg-accent-hi"
@@ -587,6 +659,140 @@ function RowButton(props: {
       }`}
     >
       {props.children}
+    </button>
+  );
+}
+
+function ContextMenu({
+  target,
+  onClose,
+  act,
+  onRemove,
+}: {
+  target: ContextTarget;
+  onClose: () => void;
+  act: (p: Promise<unknown>, ok?: string) => void;
+  onRemove: (hash: string) => void;
+}) {
+  const width = 196;
+  const height = target.kind === "download" ? 210 : 76;
+  const left = Math.max(8, Math.min(target.x, window.innerWidth - width - 8));
+  const top = Math.max(8, Math.min(target.y, window.innerHeight - height - 8));
+
+  const run = (fn: () => void) => {
+    onClose();
+    fn();
+  };
+
+  return (
+    <div
+      role="menu"
+      onMouseDown={(e) => e.stopPropagation()}
+      onContextMenu={(e) => e.preventDefault()}
+      style={{ left, top, width }}
+      className="chrome fixed z-30 rounded-md border border-line bg-panel py-1 text-[12px] shadow-xl shadow-black/50"
+    >
+      {target.kind === "download" ? (
+        <>
+          <MenuItem
+            icon={ExternalLink}
+            label="Open"
+            disabled={target.d.state === "metadata"}
+            onClick={() => run(() => act(api.openDownload(target.d.infoHash)))}
+          />
+          <MenuItem
+            icon={FolderOpen}
+            label="Open in folder"
+            disabled={target.d.state === "metadata"}
+            onClick={() => run(() => act(api.revealDownload(target.d.infoHash)))}
+          />
+          <div className="my-1 border-t border-line/70" />
+          {running(target.d) ? (
+            <MenuItem
+              icon={Pause}
+              label="Pause"
+              onClick={() => run(() => act(api.pauseDownload(target.d.infoHash)))}
+            />
+          ) : (
+            <MenuItem
+              icon={Play}
+              label={target.d.state === "completed" ? "Seed again" : "Resume"}
+              onClick={() => run(() => act(api.resumeDownload(target.d.infoHash)))}
+            />
+          )}
+          <MenuItem
+            icon={ListOrdered}
+            label="Sequential download"
+            checked={target.d.sequential}
+            onClick={() =>
+              run(() =>
+                act(
+                  api.setSequential(target.d.infoHash, !target.d.sequential),
+                  !target.d.sequential ? "Sequential download enabled" : "Sequential download disabled",
+                ),
+              )
+            }
+          />
+          <MenuItem
+            icon={RotateCw}
+            label="Recheck"
+            disabled={target.d.state === "metadata"}
+            onClick={() => run(() => act(api.recheckDownload(target.d.infoHash), "Rechecking files"))}
+          />
+          <div className="my-1 border-t border-line/70" />
+          <MenuItem
+            icon={Trash2}
+            label="Remove…"
+            danger
+            onClick={() => run(() => onRemove(target.d.infoHash))}
+          />
+        </>
+      ) : (
+        <>
+          <MenuItem
+            icon={ExternalLink}
+            label="Open"
+            onClick={() => run(() => act(api.openDownloadFile(target.hash, target.file.index)))}
+          />
+          <MenuItem
+            icon={FolderOpen}
+            label="Open in folder"
+            onClick={() => run(() => act(api.revealDownloadFile(target.hash, target.file.index)))}
+          />
+        </>
+      )}
+    </div>
+  );
+}
+
+function MenuItem({
+  icon: Icon,
+  label,
+  checked,
+  danger,
+  disabled,
+  onClick,
+}: {
+  icon: LucideIcon;
+  label: string;
+  checked?: boolean;
+  danger?: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      disabled={disabled}
+      onClick={onClick}
+      className={`flex w-full items-center gap-2 px-2.5 py-1.5 text-left transition-colors duration-150 disabled:pointer-events-none disabled:opacity-40 ${
+        danger ? "text-bad hover:bg-bad/15" : "text-fg hover:bg-raised"
+      }`}
+    >
+      <Icon size={13} className={danger ? "text-bad" : checked ? "text-accent" : "text-dim"} />
+      <span className="flex-1 truncate">{label}</span>
+      {checked && <Check size={12} className="text-accent" />}
     </button>
   );
 }

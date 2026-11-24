@@ -11,6 +11,7 @@ import { DownloadBar } from "./components/DownloadBar";
 import { NavRail, type View } from "./components/NavRail";
 import { Sidebar } from "./components/Sidebar";
 import { SettingsModal } from "./components/SettingsModal";
+import { DownloadModal } from "./components/DownloadModal";
 import { useSearch } from "./hooks/useSearch";
 import { api } from "./lib/api";
 import { setOperator } from "./lib/dsl";
@@ -48,6 +49,7 @@ export default function App() {
   const [view, setView] = useState<View>("results");
   const [downloads, setDownloads] = useState<Download[]>([]);
   const [dlSelected, setDlSelected] = useState<string | null>(null);
+  const [pendingDownload, setPendingDownload] = useState<TorrentResult | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const { state, search, cancel } = useSearch();
   const busy = state.phase === "searching" || state.phase === "scraping";
@@ -153,18 +155,9 @@ export default function App() {
   );
   const open = useCallback((r: TorrentResult) => openMagnet(r.magnet), [openMagnet]);
 
-  const download = useCallback(
-    (r: TorrentResult) => {
-      api.download(r.magnet).then(
-        () => {
-          refreshDownloads();
-          notify("Download started");
-        },
-        (e) => notify(`Couldn't start download: ${e}`),
-      );
-    },
-    [notify, refreshDownloads],
-  );
+  const download = useCallback((r: TorrentResult) => {
+    setPendingDownload(r);
+  }, []);
 
   const send = useCallback(
     (r: TorrentResult) => {
@@ -216,7 +209,7 @@ export default function App() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (settingsOpen) return;
+      if (settingsOpen || pendingDownload) return;
       const key = e.key.toLowerCase();
       if ((e.ctrlKey && key === "r") || e.key === "F5") {
         e.preventDefault(); // never reload the webview
@@ -306,7 +299,7 @@ export default function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [rows, selected, current, busy, cancel, open, copy, settingsOpen, text, submit, view, download]);
+  }, [rows, selected, current, busy, cancel, open, copy, settingsOpen, pendingDownload, text, submit, view, download]);
 
   const empty = (
     <div className="chrome flex h-full flex-col items-center justify-center gap-4 text-dim">
@@ -399,6 +392,18 @@ export default function App() {
         origin={state.origin}
       />
       {settingsOpen && settings && <SettingsModal initial={settings} onSaved={setSettings} onClose={() => setSettingsOpen(false)} onNotify={notify} />}
+      {pendingDownload && (
+        <DownloadModal
+          result={pendingDownload}
+          defaultDir={settings?.download.dir ?? null}
+          onStarted={(_hash, updated) => {
+            refreshDownloads();
+            notify(updated ? "Download updated" : "Download started");
+          }}
+          onClose={() => setPendingDownload(null)}
+          onNotify={notify}
+        />
+      )}
     </div>
   );
 }

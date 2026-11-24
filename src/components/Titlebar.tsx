@@ -1,5 +1,6 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Minus, Square, X } from "lucide-react";
+import appIcon from "../assets/sectator.png";
 
 const win = getCurrentWindow();
 
@@ -7,10 +8,7 @@ export function Titlebar({ version }: { version?: string }) {
   return (
     <div data-tauri-drag-region onDoubleClick={() => win.toggleMaximize()} className="chrome flex h-8 shrink-0 items-center border-b border-line bg-panel pl-3">
       <span data-tauri-drag-region className="flex items-center gap-2 text-[12px] text-dim">
-        <svg width="12" height="12" viewBox="0 0 512 512" aria-hidden className="text-accent">
-          <circle cx="226" cy="226" r="118" fill="none" stroke="currentColor" strokeWidth="56" />
-          <path d="M312 312 L410 410" stroke="currentColor" strokeWidth="64" strokeLinecap="round" />
-        </svg>
+        <img src={appIcon} alt="" width={16} height={16} draggable={false} data-tauri-drag-region className="h-4 w-4 rounded-[3px]" />
         <span data-tauri-drag-region className="font-medium text-fg">
           Sectator
         </span>

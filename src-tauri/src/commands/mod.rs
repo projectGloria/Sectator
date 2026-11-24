@@ -6,7 +6,7 @@ use serde::Serialize;
 use tauri::ipc::Channel;
 use tauri::State;
 
-use crate::clients::download::{Download, DownloadFile, Downloader};
+use crate::clients::download::{Download, DownloadFile, DownloadPreview, Downloader, PreviewStart};
 use crate::clients::{self, ClientConfig, PushOutcome};
 use crate::engine::runner::{Engine, EngineConfig, Origin, SearchEvent};
 use crate::indexers::{registry, IndexerConfig};
@@ -224,6 +224,46 @@ pub async fn download_add(dl: Dl<'_>, magnet: String, save_path: Option<String>)
     Ok(hash)
 }
 
+/// Stage a magnet to fetch its metadata before starting the download.
+#[tauri::command]
+pub async fn download_preview_start(dl: Dl<'_>, magnet: String, save_path: Option<String>) -> Result<PreviewStart, String> {
+    blocking(dl.inner(), move |d| d.preview_start(&magnet, save_path.as_deref()).map_err(err)).await
+}
+
+/// Poll metadata & file list of a staged (or existing) torrent.
+#[tauri::command]
+pub fn download_preview_status(dl: Dl<'_>, info_hash: String) -> Result<DownloadPreview, String> {
+    dl.preview_status(&info_hash).map_err(err)
+}
+
+/// Confirm a staged download with file selection, sequential mode, and optional save folder.
+#[tauri::command]
+pub async fn download_preview_confirm(
+    dl: Dl<'_>,
+    info_hash: String,
+    save_path: Option<String>,
+    files: Option<Vec<(i32, bool)>>,
+    sequential: bool,
+) -> Result<(), String> {
+    blocking(dl.inner(), move |d| {
+        d.preview_confirm(&info_hash, save_path.as_deref(), files.as_deref(), sequential).map_err(err)
+    })
+    .await?;
+    let _ = blocking(dl.inner(), |d| d.persist(false, 3_000).map_err(err)).await;
+    Ok(())
+}
+
+/// Cancel a staged preview (removes it only if it was staged, never an already-active download).
+#[tauri::command]
+pub fn download_preview_cancel(dl: Dl<'_>, info_hash: String) -> Result<(), String> {
+    dl.preview_cancel(&info_hash).map_err(err)
+}
+
+#[tauri::command]
+pub fn download_set_sequential(dl: Dl<'_>, info_hash: String, sequential: bool) -> Result<(), String> {
+    dl.set_sequential(&info_hash, sequential).map_err(err)
+}
+
 #[tauri::command]
 pub fn download_list(dl: Dl<'_>) -> Vec<Download> {
     dl.list()
@@ -266,6 +306,33 @@ pub fn download_set_wanted(dl: Dl<'_>, info_hash: String, files: Vec<(i32, bool)
 pub fn download_reveal(app: tauri::AppHandle, dl: Dl<'_>, info_hash: String) -> Result<(), String> {
     use tauri_plugin_opener::OpenerExt;
     let path = dl.content_path(&info_hash).ok_or("no such download")?;
+    app.opener().reveal_item_in_dir(path).map_err(err)
+}
+
+/// Open / run a downloaded item (file or folder) with the system default handler.
+#[tauri::command]
+pub fn download_open(app: tauri::AppHandle, dl: Dl<'_>, info_hash: String) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    let path = dl.content_path(&info_hash).ok_or("no such download")?;
+    if !path.exists() {
+        return Err("files aren't on disk yet".into());
+    }
+    app.opener().open_path(path.to_string_lossy(), None::<&str>).map_err(err)
+}
+
+/// Open / run a specific file inside a download.
+#[tauri::command]
+pub fn download_open_file(app: tauri::AppHandle, dl: Dl<'_>, info_hash: String, file_index: i32) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    let path = dl.file_path(&info_hash, file_index).ok_or("file isn't on disk yet")?;
+    app.opener().open_path(path.to_string_lossy(), None::<&str>).map_err(err)
+}
+
+/// Reveal a specific file inside a download in Explorer.
+#[tauri::command]
+pub fn download_reveal_file(app: tauri::AppHandle, dl: Dl<'_>, info_hash: String, file_index: i32) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    let path = dl.file_path(&info_hash, file_index).ok_or("file isn't on disk yet")?;
     app.opener().reveal_item_in_dir(path).map_err(err)
 }
 

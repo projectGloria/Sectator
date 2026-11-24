@@ -26,6 +26,7 @@ public:
 
     // Each add returns the torrent's lowercase hex infohash.
     rust::String add_magnet(rust::Str uri, rust::Str save_path, bool paused) const;
+    rust::String add_magnet_preview(rust::Str uri, rust::Str save_path) const;
     rust::String add_torrent(rust::Slice<const std::uint8_t> data, rust::Str save_path, bool paused, bool seed_mode) const;
     rust::String add_resume(rust::Slice<const std::uint8_t> data) const;
 
@@ -34,6 +35,9 @@ public:
     bool resume(rust::Str hash) const;
     bool remove(rust::Str hash, bool delete_files) const;
     bool recheck(rust::Str hash) const;
+    bool set_sequential(rust::Str hash, bool sequential) const;
+    bool enable_default_download(rust::Str hash) const;
+    bool move_storage(rust::Str hash, rust::Str save_path) const;
 
     rust::Vec<FileEntry> files(rust::Str hash) const;
     bool set_priorities(rust::Str hash, rust::Slice<const std::uint8_t> priorities) const;

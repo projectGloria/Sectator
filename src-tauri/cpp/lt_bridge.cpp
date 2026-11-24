@@ -119,6 +119,15 @@ rust::String Session::add_magnet(rust::Str uri, rust::Str save_path, bool paused
     return add(ses_, p);
 }
 
+rust::String Session::add_magnet_preview(rust::Str uri, rust::Str save_path) const {
+    lt::error_code ec;
+    lt::add_torrent_params p = lt::parse_magnet_uri(to_std(uri), ec);
+    if (ec) throw std::runtime_error("invalid magnet link: " + ec.message());
+    own(p, to_std(save_path), false);
+    p.flags |= lt::torrent_flags::default_dont_download;
+    return add(ses_, p);
+}
+
 rust::String Session::add_torrent(rust::Slice<const std::uint8_t> data, rust::Str save_path, bool paused, bool seed_mode) const {
     lt::error_code ec;
     lt::add_torrent_params p = lt::load_torrent_buffer(
@@ -149,6 +158,7 @@ rust::Vec<TorrentStatus> Session::list() const {
         t.save_path = lossy(st.save_path);
         t.state = static_cast<std::uint8_t>(st.state);
         t.paused = static_cast<bool>(st.flags & lt::torrent_flags::paused);
+        t.sequential = static_cast<bool>(st.flags & lt::torrent_flags::sequential_download);
         t.has_metadata = st.has_metadata;
         t.progress = st.progress;
         t.total_wanted = st.total_wanted;
@@ -196,6 +206,28 @@ bool Session::recheck(rust::Str hash) const {
     lt::torrent_handle h = find(ses_, hash);
     if (!h.is_valid()) return false;
     h.force_recheck();
+    return true;
+}
+
+bool Session::set_sequential(rust::Str hash, bool sequential) const {
+    lt::torrent_handle h = find(ses_, hash);
+    if (!h.is_valid()) return false;
+    if (sequential) h.set_flags(lt::torrent_flags::sequential_download);
+    else h.unset_flags(lt::torrent_flags::sequential_download);
+    return true;
+}
+
+bool Session::enable_default_download(rust::Str hash) const {
+    lt::torrent_handle h = find(ses_, hash);
+    if (!h.is_valid()) return false;
+    h.unset_flags(lt::torrent_flags::default_dont_download);
+    return true;
+}
+
+bool Session::move_storage(rust::Str hash, rust::Str save_path) const {
+    lt::torrent_handle h = find(ses_, hash);
+    if (!h.is_valid()) return false;
+    h.move_storage(to_std(save_path));
     return true;
 }
 

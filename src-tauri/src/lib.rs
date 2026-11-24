@@ -64,6 +64,11 @@ pub fn run() {
             commands::push_to_client,
             commands::test_client,
             commands::download_add,
+            commands::download_preview_start,
+            commands::download_preview_status,
+            commands::download_preview_confirm,
+            commands::download_preview_cancel,
+            commands::download_set_sequential,
             commands::download_list,
             commands::download_pause,
             commands::download_resume,
@@ -72,6 +77,9 @@ pub fn run() {
             commands::download_files,
             commands::download_set_wanted,
             commands::download_reveal,
+            commands::download_open,
+            commands::download_open_file,
+            commands::download_reveal_file,
             commands::file_icon,
         ])
         .build(tauri::generate_context!())

@@ -18,6 +18,7 @@ pub mod bridge {
         /// `lt::torrent_status::state_t`.
         state: u8,
         paused: bool,
+        sequential: bool,
         has_metadata: bool,
         progress: f32,
         total_wanted: i64,
@@ -58,6 +59,7 @@ pub mod bridge {
         fn new_session(cfg: &SessionConfig) -> Result<UniquePtr<Session>>;
         fn apply(self: &Session, cfg: &SessionConfig);
         fn add_magnet(self: &Session, uri: &str, save_path: &str, paused: bool) -> Result<String>;
+        fn add_magnet_preview(self: &Session, uri: &str, save_path: &str) -> Result<String>;
         fn add_torrent(self: &Session, data: &[u8], save_path: &str, paused: bool, seed_mode: bool) -> Result<String>;
         fn add_resume(self: &Session, data: &[u8]) -> Result<String>;
         fn list(self: &Session) -> Vec<TorrentStatus>;
@@ -65,6 +67,9 @@ pub mod bridge {
         fn resume(self: &Session, hash: &str) -> bool;
         fn remove(self: &Session, hash: &str, delete_files: bool) -> bool;
         fn recheck(self: &Session, hash: &str) -> bool;
+        fn set_sequential(self: &Session, hash: &str, sequential: bool) -> bool;
+        fn enable_default_download(self: &Session, hash: &str) -> bool;
+        fn move_storage(self: &Session, hash: &str, save_path: &str) -> bool;
         fn files(self: &Session, hash: &str) -> Vec<FileEntry>;
         fn set_priorities(self: &Session, hash: &str, priorities: &[u8]) -> bool;
         fn save_resume(self: &Session, all: bool, timeout_ms: u32) -> Vec<ResumeBlob>;

@@ -186,10 +186,31 @@ export interface Download {
   error: string | null;
   addedAt: number;
   completedAt: number | null;
+  sequential: boolean;
   /** What the content is, from its files (src-tauri/src/parser/kind.rs). */
   kind: ContentKind;
   /** Extension holding the most bytes; picks the Windows shell icon. */
   mainExt: string | null;
+}
+
+export interface PreviewStart {
+  infoHash: string;
+  alreadyExists: boolean;
+}
+
+export interface DownloadPreview {
+  infoHash: string;
+  name: string;
+  savePath: string;
+  hasMetadata: boolean;
+  sequential: boolean;
+  seeds: number;
+  peers: number;
+  swarmSeeds: number;
+  swarmPeers: number;
+  totalSize: number;
+  files: DownloadFile[];
+  error: string | null;
 }
 
 export type ContentKind = "video" | "audio" | "game" | "software" | "book" | "image" | "archive" | "other";

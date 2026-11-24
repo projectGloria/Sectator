@@ -91,6 +91,7 @@ pub struct Download {
     pub error: Option<String>,
     pub added_at: i64,
     pub completed_at: Option<i64>,
+    pub sequential: bool,
     /// What the content is (`kind`) and its main extension (`mainExt`), for the UI icon.
     #[serde(flatten)]
     pub content: Content,
@@ -104,6 +105,30 @@ pub struct DownloadFile {
     pub size: i64,
     pub done: i64,
     pub wanted: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PreviewStart {
+    pub info_hash: String,
+    pub already_exists: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadPreview {
+    pub info_hash: String,
+    pub name: String,
+    pub save_path: String,
+    pub has_metadata: bool,
+    pub sequential: bool,
+    pub seeds: i32,
+    pub peers: i32,
+    pub swarm_seeds: i32,
+    pub swarm_peers: i32,
+    pub total_size: i64,
+    pub files: Vec<DownloadFile>,
+    pub error: Option<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -173,6 +198,7 @@ impl From<&lt::TorrentStatus> for Download {
             error: Some(s.error.clone()).filter(|e| !e.is_empty()),
             added_at: s.added_time,
             completed_at: Some(s.completed_time).filter(|t| *t > 0),
+            sequential: s.sequential,
             content: classify(&s.name, []),
         }
     }
@@ -198,6 +224,8 @@ pub struct Downloader {
     ratio_exempt: Mutex<HashSet<String>>,
     /// Content kind per hash, worked out once the file list is known.
     kinds: Mutex<HashMap<String, Content>>,
+    /// Magnets staged for the download confirmation popup (hidden from `list` and `persist`).
+    staging: Mutex<HashSet<String>>,
 }
 
 impl Downloader {
@@ -212,6 +240,7 @@ impl Downloader {
             removed: Mutex::new(HashSet::new()),
             ratio_exempt: Mutex::new(HashSet::new()),
             kinds: Mutex::new(HashMap::new()),
+            staging: Mutex::new(HashSet::new()),
         }
     }
 
@@ -287,6 +316,7 @@ impl Downloader {
 
     fn added(&self, hash: &str) {
         self.removed.lock().unwrap().remove(hash);
+        self.staging.lock().unwrap().remove(hash);
     }
 
     /// Start downloading a magnet into `save_path` (else the configured folder).
@@ -301,6 +331,102 @@ impl Downloader {
         Ok(hash)
     }
 
+    /// Stage a magnet to fetch its metadata without downloading file data.
+    /// If the torrent is already an active (non-staged) download, leaves it untouched and sets `already_exists`.
+    pub fn preview_start(&self, magnet: &str, save_path: Option<&str>) -> Result<PreviewStart> {
+        if !magnet.starts_with("magnet:?") || magnet.chars().any(char::is_control) {
+            return Err(DownloadError::NotMagnet);
+        }
+        let ses = self.session()?;
+        let existing: HashSet<String> = {
+            let staged = self.staging.lock().unwrap();
+            ses.list()
+                .into_iter()
+                .map(|s| s.info_hash)
+                .filter(|h| !staged.contains(h))
+                .collect()
+        };
+        let dir = self.save_dir(save_path)?;
+        let hash = ses.add_magnet_preview(magnet, &dir.to_string_lossy())?;
+        if existing.contains(&hash) {
+            return Ok(PreviewStart { info_hash: hash, already_exists: true });
+        }
+        self.removed.lock().unwrap().remove(&hash);
+        self.staging.lock().unwrap().insert(hash.clone());
+        Ok(PreviewStart { info_hash: hash, already_exists: false })
+    }
+
+    /// Inspect metadata and file list of a staged (or existing) torrent.
+    pub fn preview_status(&self, hash: &str) -> Result<DownloadPreview> {
+        let ses = self.running()?;
+        let st = ses.list().into_iter().find(|s| s.info_hash == hash).ok_or(DownloadError::Unknown)?;
+        let files: Vec<DownloadFile> = if st.has_metadata {
+            ses.files(hash)
+                .into_iter()
+                .map(|f| DownloadFile { index: f.index, path: f.path, size: f.size, done: f.done, wanted: f.priority > 0 })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let total_size = files.iter().map(|f| f.size).sum();
+        Ok(DownloadPreview {
+            info_hash: st.info_hash,
+            name: if st.name.is_empty() { hash.to_string() } else { st.name },
+            save_path: st.save_path,
+            has_metadata: st.has_metadata,
+            sequential: st.sequential,
+            seeds: st.num_seeds,
+            peers: (st.num_peers - st.num_seeds).max(0),
+            swarm_seeds: st.list_seeds,
+            swarm_peers: st.list_peers,
+            total_size,
+            files,
+            error: Some(st.error).filter(|e| !e.is_empty()),
+        })
+    }
+
+    /// Promote a staged magnet into a real download (or update an existing one) with
+    /// the chosen file selection, sequential mode, and optional save folder.
+    pub fn preview_confirm(&self, hash: &str, save_path: Option<&str>, wanted: Option<&[(i32, bool)]>, sequential: bool) -> Result<()> {
+        let ses = self.running()?;
+        let current = ses.list().into_iter().find(|s| s.info_hash == hash).ok_or(DownloadError::Unknown)?;
+        if let Some(sp) = save_path.map(str::trim).filter(|p| !p.is_empty()) {
+            let target = self.save_dir(Some(sp))?;
+            if Path::new(&current.save_path) != target {
+                Self::check(ses.move_storage(hash, &target.to_string_lossy()))?;
+            }
+        }
+        Self::check(ses.enable_default_download(hash))?;
+        if let Some(files) = wanted {
+            if current.has_metadata {
+                self.set_wanted(hash, files)?;
+            }
+        }
+        Self::check(ses.set_sequential(hash, sequential))?;
+        Self::check(ses.resume(hash))?;
+        self.staging.lock().unwrap().remove(hash);
+        self.removed.lock().unwrap().remove(hash);
+        Ok(())
+    }
+
+    /// Cancel a staged preview, removing the torrent only if it was staged by `preview_start`.
+    pub fn preview_cancel(&self, hash: &str) -> Result<()> {
+        if !self.staging.lock().unwrap().remove(hash) {
+            return Ok(());
+        }
+        if let Ok(ses) = self.running() {
+            let _ = ses.remove(hash, false);
+        }
+        self.removed.lock().unwrap().insert(hash.to_string());
+        self.kinds.lock().unwrap().remove(hash);
+        Ok(())
+    }
+
+    /// Toggle sequential piece downloading on an active torrent.
+    pub fn set_sequential(&self, hash: &str, sequential: bool) -> Result<()> {
+        Self::check(self.running()?.set_sequential(hash, sequential))
+    }
+
     /// Add a `.torrent`; `seed` trusts files already in `save_path` without rechecking.
     pub fn add_torrent_file(&self, data: &[u8], save_path: Option<&str>, paused: bool, seed: bool) -> Result<String> {
         let dir = self.save_dir(save_path)?;
@@ -311,9 +437,11 @@ impl Downloader {
 
     pub fn list(&self) -> Vec<Download> {
         let Some(ses) = self.session.get().and_then(|s| s.as_ref()) else { return Vec::new() };
+        let staged = self.staging.lock().unwrap().clone();
         let mut kinds = self.kinds.lock().unwrap();
         ses.list()
             .iter()
+            .filter(|s| !staged.contains(&s.info_hash))
             .map(|s| {
                 let mut d = Download::from(s);
                 if let Some(c) = kinds.get(&d.info_hash) {
@@ -363,6 +491,7 @@ impl Downloader {
     pub fn remove(&self, hash: &str, delete_files: bool) -> Result<()> {
         Self::check(self.running()?.remove(hash, delete_files))?;
         self.removed.lock().unwrap().insert(hash.to_string());
+        self.staging.lock().unwrap().remove(hash);
         self.ratio_exempt.lock().unwrap().remove(hash);
         self.kinds.lock().unwrap().remove(hash);
         match std::fs::remove_file(self.resume_path(hash)) {
@@ -407,6 +536,14 @@ impl Downloader {
         Some(if p.exists() { p } else { PathBuf::from(d.save_path) })
     }
 
+    /// The exact on-disk path for one file inside a download (by libtorrent file index).
+    pub fn file_path(&self, hash: &str, file_index: i32) -> Option<PathBuf> {
+        let d = self.get(hash)?;
+        let f = self.files(hash).ok()?.into_iter().find(|f| f.index == file_index)?;
+        let p = Path::new(&d.save_path).join(&f.path);
+        p.exists().then_some(p)
+    }
+
     /// Pause seeding downloads that reached the ratio limit; returns their hashes.
     pub fn enforce_ratio(&self) -> Vec<String> {
         let limit = self.settings.lock().unwrap().seed_ratio;
@@ -434,8 +571,12 @@ impl Downloader {
         }
         std::fs::create_dir_all(&self.state_dir)?;
         let removed = self.removed.lock().unwrap().clone();
+        let staged = self.staging.lock().unwrap().clone();
         let mut n = 0;
-        for b in blobs.iter().filter(|b| !removed.contains(&b.info_hash) && b.info_hash.len() == 40) {
+        for b in blobs
+            .iter()
+            .filter(|b| !removed.contains(&b.info_hash) && !staged.contains(&b.info_hash) && b.info_hash.len() == 40)
+        {
             let path = self.resume_path(&b.info_hash);
             let tmp = path.with_extension("tmp");
             std::fs::write(&tmp, &b.data)?;
@@ -458,6 +599,7 @@ mod tests {
             save_path: "C:\\Users\\you\\Downloads".into(),
             state: DOWNLOADING,
             paused: false,
+            sequential: false,
             has_metadata: true,
             progress: 0.5,
             total_wanted: 1_000,
@@ -554,6 +696,34 @@ mod tests {
         let files = dl.files(&seed).unwrap();
         assert_eq!(files.len(), 1);
         assert_eq!((files[0].path.as_str(), files[0].size, files[0].wanted), ("sample.bin", 300_000, true));
+        assert_eq!(dl.file_path(&seed, files[0].index).unwrap(), file);
+
+        // Sequential download flag toggle.
+        assert!(!dl.get(&seed).unwrap().sequential);
+        dl.set_sequential(&seed, true).unwrap();
+        let d = wait_for(&dl, &seed, |d| d.sequential);
+        assert!(d.sequential);
+        dl.set_sequential(&seed, false).unwrap();
+        wait_for(&dl, &seed, |d| !d.sequential);
+
+        // Staged preview stays hidden from `list()` and `persist()`, and `preview_cancel` removes it.
+        let staged_hash = "fedcba9876543210fedcba9876543210fedcba98";
+        let staged_magnet = format!("magnet:?xt=urn:btih:{staged_hash}&dn=Staged");
+        let ps = dl.preview_start(&staged_magnet, None).unwrap();
+        assert_eq!((ps.info_hash.as_str(), ps.already_exists), (staged_hash, false));
+        assert!(dl.get(staged_hash).is_none(), "staged preview is hidden from list()");
+        let prev = dl.preview_status(staged_hash).unwrap();
+        assert_eq!((prev.name.as_str(), prev.has_metadata), ("Staged", false));
+        dl.preview_cancel(staged_hash).unwrap();
+        assert!(matches!(dl.preview_status(staged_hash), Err(DownloadError::Unknown)));
+
+        // Previewing and confirming promotes the torrent with sequential enabled.
+        let ps2 = dl.preview_start(&staged_magnet, None).unwrap();
+        assert!(!ps2.already_exists);
+        dl.preview_confirm(staged_hash, None, None, true).unwrap();
+        let promoted = wait_for(&dl, staged_hash, |d| d.sequential);
+        assert!(promoted.sequential);
+        dl.remove(staged_hash, false).unwrap();
 
         let magnet_hash = "0123456789abcdef0123456789abcdef01234567";
         let magnet = format!("magnet:?xt=urn:btih:{magnet_hash}&dn=Parked");
