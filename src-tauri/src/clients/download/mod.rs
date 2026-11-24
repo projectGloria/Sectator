@@ -204,6 +204,52 @@ impl From<&lt::TorrentStatus> for Download {
     }
 }
 
+/// Compute libtorrent file priorities (0 = skip, 1–7 = low…top) for sequential mode.
+/// Gives the first incomplete wanted file top priority (7), the next one high (6) for
+/// seamless handoff, and the remaining wanted files low (1), so multi-file torrents
+/// (e.g. season packs) download strictly in file order while preserving `total_wanted`.
+/// When `sequential` is false, restores all wanted files to normal priority (4).
+fn sequential_priorities(files: &[lt::FileEntry], sequential: bool) -> Option<Vec<u8>> {
+    let count = files.iter().map(|f| f.index + 1).max().unwrap_or(0).max(0) as usize;
+    if count == 0 {
+        return None;
+    }
+    let mut current = vec![0u8; count];
+    for f in files {
+        current[f.index as usize] = f.priority;
+    }
+    let mut next = current.clone();
+    if sequential {
+        let wanted_count = files.iter().filter(|f| f.priority > 0).count();
+        if wanted_count > 1 {
+            let mut rank = 0u8;
+            for f in files {
+                if f.priority == 0 {
+                    continue;
+                }
+                let p = if f.done < f.size {
+                    rank = rank.saturating_add(1);
+                    match rank {
+                        1 => 7,
+                        2 => 6,
+                        _ => 1,
+                    }
+                } else {
+                    4
+                };
+                next[f.index as usize] = p;
+            }
+        }
+    } else {
+        for f in files {
+            if f.priority > 0 {
+                next[f.index as usize] = 4;
+            }
+        }
+    }
+    (next != current).then_some(next)
+}
+
 /// A seeding download that has given back `limit`× what it holds (0 = no limit).
 pub fn over_ratio(d: &Download, limit: f64) -> bool {
     limit > 0.0 && d.state == DownloadState::Seeding && d.ratio >= limit
@@ -396,13 +442,18 @@ impl Downloader {
                 Self::check(ses.move_storage(hash, &target.to_string_lossy()))?;
             }
         }
+        // Set sequential mode BEFORE enabling file priorities so libtorrent's piece
+        // picker starts in sequential order from the very first piece request.
+        Self::check(ses.set_sequential(hash, sequential))?;
         Self::check(ses.enable_default_download(hash))?;
         if let Some(files) = wanted {
             if current.has_metadata {
                 self.set_wanted(hash, files)?;
             }
         }
-        Self::check(ses.set_sequential(hash, sequential))?;
+        if current.has_metadata {
+            self.apply_sequential_priorities(hash, sequential);
+        }
         Self::check(ses.resume(hash))?;
         self.staging.lock().unwrap().remove(hash);
         self.removed.lock().unwrap().remove(hash);
@@ -424,7 +475,32 @@ impl Downloader {
 
     /// Toggle sequential piece downloading on an active torrent.
     pub fn set_sequential(&self, hash: &str, sequential: bool) -> Result<()> {
-        Self::check(self.running()?.set_sequential(hash, sequential))
+        Self::check(self.running()?.set_sequential(hash, sequential))?;
+        self.apply_sequential_priorities(hash, sequential);
+        Ok(())
+    }
+
+    fn apply_sequential_priorities(&self, hash: &str, sequential: bool) {
+        let Ok(ses) = self.running() else { return };
+        let files = ses.files(hash);
+        if let Some(prio) = sequential_priorities(&files, sequential) {
+            let _ = ses.set_priorities(hash, &prio);
+        }
+    }
+
+    /// Keep file priorities ordered for every active sequential download so multi-file
+    /// torrents advance strictly from file 1 to file N as each file completes.
+    pub fn enforce_sequential(&self) {
+        let Some(ses) = self.session.get().and_then(|s| s.as_ref()) else { return };
+        let staged = self.staging.lock().unwrap().clone();
+        for s in ses.list() {
+            if s.sequential && s.has_metadata && !staged.contains(&s.info_hash) {
+                let files = ses.files(&s.info_hash);
+                if let Some(prio) = sequential_priorities(&files, true) {
+                    let _ = ses.set_priorities(&s.info_hash, &prio);
+                }
+            }
+        }
     }
 
     /// Add a `.torrent`; `seed` trusts files already in `save_path` without rechecking.
@@ -526,7 +602,11 @@ impl Downloader {
                 *p = if w { 4 } else { 0 };
             }
         }
-        Self::check(ses.set_priorities(hash, &prio))
+        Self::check(ses.set_priorities(hash, &prio))?;
+        if ses.list().iter().any(|s| s.info_hash == hash && s.sequential) {
+            self.apply_sequential_priorities(hash, true);
+        }
+        Ok(())
     }
 
     /// Where a download's data lives on disk (its folder or single file).
@@ -641,6 +721,29 @@ mod tests {
         let err = Download::from(&lt::TorrentStatus { error: "disk full".into(), ..status() });
         assert_eq!((err.state, err.error.as_deref()), (DownloadState::Error, Some("disk full")));
         assert_eq!(Download::from(&lt::TorrentStatus { state: CHECKING_RESUME, ..status() }).state, DownloadState::Checking);
+    }
+
+    #[test]
+    fn sequential_priorities_order_and_restore() {
+        let files = vec![
+            lt::FileEntry { index: 0, path: "ep01.mkv".into(), size: 100, done: 100, priority: 4 },
+            lt::FileEntry { index: 1, path: "ep02.mkv".into(), size: 100, done: 20, priority: 4 },
+            lt::FileEntry { index: 2, path: "ep03.mkv".into(), size: 100, done: 0, priority: 0 },
+            lt::FileEntry { index: 3, path: "ep04.mkv".into(), size: 100, done: 0, priority: 4 },
+            lt::FileEntry { index: 4, path: "ep05.mkv".into(), size: 100, done: 0, priority: 4 },
+        ];
+        // ep01 is done (4), ep02 is first incomplete wanted (7), ep03 is skipped (0), ep04 is next (6), ep05 is queued (1).
+        assert_eq!(sequential_priorities(&files, true), Some(vec![4, 7, 0, 6, 1]));
+
+        let ordered: Vec<_> = files
+            .iter()
+            .zip([4, 7, 0, 6, 1])
+            .map(|(f, p)| lt::FileEntry { priority: p, ..f.clone() })
+            .collect();
+        // Already ordered -> no redundant update.
+        assert_eq!(sequential_priorities(&ordered, true), None);
+        // Disabling sequential restores all wanted files to 4 while keeping skipped at 0.
+        assert_eq!(sequential_priorities(&ordered, false), Some(vec![4, 4, 0, 4, 4]));
     }
 
     #[test]

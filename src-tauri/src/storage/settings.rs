@@ -29,6 +29,10 @@ pub struct AppSettings {
     pub theme: String,
     /// Webview zoom factor (1.0 = 100%), set with Ctrl +/-/0 or in Appearance.
     pub ui_zoom: f64,
+    /// Hide zero-seeder (dead) torrents from search results.
+    pub hide_dead: bool,
+    /// Keep Sectator running in the system tray when the window is closed.
+    pub run_in_tray: bool,
 }
 
 /// Allowed UI zoom range.
@@ -49,6 +53,8 @@ impl Default for AppSettings {
             download: DownloadSettings::default(),
             theme: THEMES[0].to_string(),
             ui_zoom: 1.0,
+            hide_dead: false,
+            run_in_tray: true,
         }
     }
 }

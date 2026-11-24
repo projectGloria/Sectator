@@ -1,7 +1,7 @@
 // Pre-download confirmation modal: fetches magnet metadata, lets the user pick files,
 // toggle sequential download order, and choose the save folder before starting.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, Check, CheckCircle2, Download, FolderOpen, ListOrdered, Loader2, Search, X } from "lucide-react";
+import { AlertCircle, Check, CheckCircle2, Download, FolderOpen, Layers, ListOrdered, Loader2, Magnet, Search, User, X } from "lucide-react";
 import { api } from "../lib/api";
 import { formatSize } from "../lib/format";
 import type { DownloadPreview, TorrentResult } from "../lib/types";
@@ -26,6 +26,7 @@ export function DownloadModal({ result, defaultDir, onStarted, onClose, onNotify
   const [wanted, setWanted] = useState<Record<number, boolean>>({});
   const [filter, setFilter] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [copiedMagnet, setCopiedMagnet] = useState(false);
 
   const hashRef = useRef<string | null>(null);
   const existsRef = useRef(false);
@@ -175,6 +176,22 @@ export function DownloadModal({ result, defaultDir, onStarted, onClose, onNotify
   const displayName = preview?.name && preview.name !== infoHash ? preview.name : result.title;
   const displayError = startError ?? preview?.error ?? null;
   const canStart = !!infoHash && !startError && !submitting && (!hasMeta || files.length === 0 || selectedCount > 0);
+  const sourceNames = useMemo(
+    () => [...new Set(result.sources.map((s) => s.indexerName).filter(Boolean))],
+    [result.sources],
+  );
+  const uploaderLabel = result.uploader ? `${result.uploader}${result.verifiedUploader ? " ✓" : ""}` : null;
+
+  const copyMagnet = () => {
+    navigator.clipboard.writeText(result.magnet).then(
+      () => {
+        setCopiedMagnet(true);
+        onNotify("Magnet link copied");
+        window.setTimeout(() => setCopiedMagnet(false), 1500);
+      },
+      () => onNotify("Clipboard unavailable"),
+    );
+  };
 
   return (
     <div
@@ -208,6 +225,20 @@ export function DownloadModal({ result, defaultDir, onStarted, onClose, onNotify
             )}
             <button
               type="button"
+              aria-label="Copy magnet link"
+              title="Copy magnet link to clipboard"
+              onClick={copyMagnet}
+              className={`flex h-7 items-center gap-1 rounded px-2 text-[11px] transition-colors duration-150 ${
+                copiedMagnet
+                  ? "bg-good/15 text-good"
+                  : "text-dim hover:bg-raised hover:text-fg active:bg-line"
+              }`}
+            >
+              {copiedMagnet ? <Check size={12} /> : <Magnet size={12} />}
+              <span>{copiedMagnet ? "Copied" : "Magnet"}</span>
+            </button>
+            <button
+              type="button"
               aria-label="Close"
               onClick={cancel}
               className="flex h-7 w-7 items-center justify-center rounded text-dim transition-colors duration-150 hover:bg-raised hover:text-fg"
@@ -225,6 +256,18 @@ export function DownloadModal({ result, defaultDir, onStarted, onClose, onNotify
           <div className="chrome num mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-dim">
             <span>Size: {formatSize(hasMeta && totalSize > 0 ? totalSize : result.size)}</span>
             {hasMeta && <span>{files.length} file{files.length === 1 ? "" : "s"}</span>}
+            {uploaderLabel && (
+              <span className="inline-flex items-center gap-1" title={`Uploader: ${uploaderLabel}`}>
+                <User size={11} className="text-faint" />
+                <span className="select-text text-fg">{uploaderLabel}</span>
+              </span>
+            )}
+            {sourceNames.length > 0 && (
+              <span className="inline-flex items-center gap-1" title={`From: ${sourceNames.join(", ")}`}>
+                <Layers size={11} className="text-faint" />
+                <span className="text-fg">{sourceNames.join(", ")}</span>
+              </span>
+            )}
             {!hasMeta && preview && (preview.seeds > 0 || preview.peers > 0) && (
               <span>
                 Connected: {preview.seeds} seeds · {preview.peers} peers
@@ -283,7 +326,7 @@ export function DownloadModal({ result, defaultDir, onStarted, onClose, onNotify
                         onChange={() => toggleOne(f.index)}
                         stopPropagation
                       />
-                      <FileIcon path={f.path} size={15} />
+                      <FileIcon path={f.path} size={16} />
                       <span className="num min-w-0 flex-1 truncate" title={f.path}>
                         {base}
                         {dir && <span className="ml-2 text-faint">{dir}</span>}

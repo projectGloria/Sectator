@@ -149,6 +149,10 @@ export interface AppSettings {
   theme: string;
   /** Webview zoom factor, 1 = 100% (see src/lib/zoom.ts). */
   uiZoom: number;
+  /** Hide zero-seeder (dead) torrents from search results. */
+  hideDead: boolean;
+  /** Keep Sectator running in the system tray when the window is closed. */
+  runInTray: boolean;
 }
 
 // ---- built-in downloader (src-tauri/src/clients/download) ----

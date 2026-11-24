@@ -1,11 +1,13 @@
 import { forwardRef } from "react";
-import { Loader2, Search, Square, X } from "lucide-react";
+import { Loader2, Search, Skull, Square, X } from "lucide-react";
 import { operatorTokens, operatorValue, removeToken, setOperator } from "../lib/dsl";
 import { CATEGORIES } from "../lib/types";
 
 interface Props {
   value: string;
   busy: boolean;
+  hideDead: boolean;
+  onToggleDead: () => void;
   onChange: (v: string) => void;
   onSubmit: (v: string) => void;
   onCancel: () => void;
@@ -24,7 +26,7 @@ const OP_COLOR: Record<string, string> = {
   by: "text-pink",
 };
 
-export const SearchBar = forwardRef<HTMLInputElement, Props>(function SearchBar({ value, busy, onChange, onSubmit, onCancel }, ref) {
+export const SearchBar = forwardRef<HTMLInputElement, Props>(function SearchBar({ value, busy, hideDead, onToggleDead, onChange, onSubmit, onCancel }, ref) {
   const pills = operatorTokens(value);
   const category = operatorValue(value, "cat");
   const update = (v: string) => {
@@ -84,6 +86,21 @@ export const SearchBar = forwardRef<HTMLInputElement, Props>(function SearchBar(
             </option>
           ))}
         </select>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={!hideDead}
+          onClick={onToggleDead}
+          title={hideDead ? "Dead torrents (0 seeders) are hidden — click to show" : "Showing dead torrents (0 seeders) — click to hide"}
+          className={`flex h-9 shrink-0 items-center gap-1.5 rounded-md border px-2.5 text-[12px] transition-colors duration-150 focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent ${
+            hideDead
+              ? "border-accent/50 bg-accent/15 text-accent hover:bg-accent/20"
+              : "border-line bg-bg text-dim hover:border-edge hover:text-fg active:bg-raised"
+          }`}
+        >
+          <Skull size={13} />
+          <span>{hideDead ? "Dead: off" : "Dead: on"}</span>
+        </button>
         {busy && (
           <button
             onClick={onCancel}

@@ -57,9 +57,11 @@ export function Toggle({ checked, onChange, label, disabled }: { checked: boolea
       aria-label={label}
       disabled={disabled}
       onClick={() => onChange(!checked)}
-      className={`relative h-4 w-7 shrink-0 rounded-full transition-colors duration-150 disabled:opacity-40 ${checked ? "bg-accent hover:bg-accent-hi" : "bg-line hover:bg-edge"}`}
+      className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors duration-150 focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-40 ${checked ? "bg-accent hover:bg-accent-hi" : "bg-line hover:bg-edge"}`}
     >
-      <span className={`absolute top-0.5 h-3 w-3 rounded-full bg-fg transition-transform duration-150 ${checked ? "translate-x-3.5" : "translate-x-0.5"}`} />
+      <span
+        className={`pointer-events-none absolute left-0 top-0.5 h-3 w-3 rounded-full shadow-sm transition-transform duration-150 ${checked ? "translate-x-3.5 bg-on-accent" : "translate-x-0.5 bg-fg"}`}
+      />
     </button>
   );
 }

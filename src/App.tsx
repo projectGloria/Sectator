@@ -17,12 +17,11 @@ import { api } from "./lib/api";
 import { setOperator } from "./lib/dsl";
 import { applyTheme } from "./lib/theme";
 import { ZOOM_STEP, applyZoom, clampZoom, zoomLabel } from "./lib/zoom";
-import type { AppSettings, Download, TorrentResult } from "./lib/types";
+import { seedersOf, type AppSettings, type Download, type TorrentResult } from "./lib/types";
 
 const SHORTCUTS: [string, string][] = [
   ["Ctrl K  /", "Focus search"],
-  ["Enter", "Search · open magnet"],
-  ["D", "Download with Sectator"],
+  ["Enter  D", "Download with Sectator"],
   ["Ctrl J", "Downloads"],
   ["↑ ↓  J K", "Move selection"],
   ["Ctrl C", "Copy magnet"],
@@ -88,13 +87,26 @@ export default function App() {
 
   const client = useMemo(() => settings?.clients.find((c) => c.id === settings.defaultClient) ?? null, [settings]);
 
-  const rows = useMemo(() => sortResults([...state.results.values()], sort), [state.version, state.results, sort]);
+  const hideDead = settings?.hideDead ?? false;
+  const rows = useMemo(() => {
+    const all = [...state.results.values()];
+    const visible = hideDead ? all.filter((r) => !r.flags.includes("deadSwarm") && seedersOf(r) !== 0) : all;
+    return sortResults(visible, sort);
+  }, [state.version, state.results, sort, hideDead]);
   const current = (selected && state.results.get(selected)) || null;
 
   const notify = useCallback((msg: string) => {
     setToast(msg);
     window.setTimeout(() => setToast((t) => (t === msg ? null : t)), 1800);
   }, []);
+
+  const toggleDead = useCallback(() => {
+    if (!settings) return;
+    const next = { ...settings, hideDead: !settings.hideDead };
+    setSettings(next);
+    api.saveSettings(next).catch(() => {});
+    notify(next.hideDead ? "Hiding dead torrents" : "Showing dead torrents");
+  }, [settings, notify]);
 
   // Ctrl +/-/0 and Ctrl+wheel zoom the whole UI; the new factor is saved after a short pause.
   const zoomSave = useRef<number | undefined>(undefined);
@@ -277,7 +289,7 @@ export default function App() {
           move(-20);
           break;
         case "Enter":
-          if (current) open(current);
+          if (current) download(current);
           break;
         case "i":
           setInspector((v) => !v);
@@ -342,13 +354,13 @@ export default function App() {
           active={activeDownloads}
         />
         <div className="flex min-w-0 flex-1 flex-col">
-          <SearchBar ref={input} value={text} busy={busy} onChange={setText} onSubmit={submit} onCancel={cancel} />
+          <SearchBar ref={input} value={text} busy={busy} hideDead={hideDead} onToggleDead={toggleDead} onChange={setText} onSubmit={submit} onCancel={cancel} />
           <div className="relative flex min-h-0 flex-1">
             {sidebar && <Sidebar refreshKey={libKey} query={text} onRun={run} onOpenMagnet={openMagnet} onNotify={notify} onClose={() => setSidebar(false)} />}
             {view === "downloads" ? (
               <Downloads items={downloads} selected={dlSelected} onSelect={setDlSelected} onChanged={refreshDownloads} onNotify={notify} />
             ) : (
-              <ResultsTable rows={rows} selected={selected} sort={sort} onSort={setSort} onSelect={setSelected} onActivate={open} empty={empty} />
+              <ResultsTable rows={rows} selected={selected} sort={sort} onSort={setSort} onSelect={setSelected} onActivate={download} empty={empty} />
             )}
             {view === "results" && inspector && current && (
               <Inspector

@@ -293,6 +293,10 @@ function DownloadsTab({ s, setS }: TabProps) {
           className="w-24 text-right"
         />
       </Field>
+      <Field label="Run in system tray" hint="Closing the window hides Sectator to the system tray so downloads keep running in the background">
+        <Toggle checked={s.runInTray} onChange={(v) => setS((p) => ({ ...p, runInTray: v }))} label="Run in system tray" />
+        <span className="chrome text-[11.5px] text-faint">Keep running in tray when window is closed</span>
+      </Field>
     </div>
   );
 }

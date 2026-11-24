@@ -28,12 +28,22 @@ const GLYPH: Record<ContentKind, [LucideIcon, string, string]> = {
   other: [File, "text-faint", "File"],
 };
 
+function toDataUrl(buf: ArrayBuffer): string | null {
+  const bytes = new Uint8Array(buf);
+  if (!bytes.length) return null;
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  }
+  return `data:image/png;base64,${btoa(bin)}`;
+}
+
 const icons = new Map<string, Promise<string | null>>();
 function shellIcon(ext: string): Promise<string | null> {
   let p = icons.get(ext);
   if (!p) {
     p = api.fileIcon(ext).then(
-      (buf) => URL.createObjectURL(new Blob([buf], { type: "image/png" })),
+      (buf) => toDataUrl(buf),
       () => null,
     );
     icons.set(ext, p);
