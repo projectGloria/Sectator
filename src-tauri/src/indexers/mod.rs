@@ -1,4 +1,15 @@
-//! Indexer trait, per-indexer configuration, and the registry of built-in adapters.
+//! Indexer trait, per-indexer configuration, and the built-in adapters.
+
+pub mod apibay;
+pub mod bt4g;
+pub mod btdig;
+pub mod http;
+pub mod knaben;
+pub mod nyaa;
+pub mod registry;
+pub mod rss;
+pub mod text;
+pub mod torznab;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -33,7 +44,7 @@ pub struct IndexerConfig {
     pub base_urls: Vec<String>,
     #[serde(default)]
     pub proxy: ProxyOverride,
-    /// Per-indexer timeout; falls back to the source-type default.
+    /// Per-indexer timeout; falls back to the clearnet/Tor default.
     pub timeout_ms: Option<u64>,
     /// Torznab API key.
     #[serde(default)]
@@ -73,6 +84,8 @@ pub enum IndexerError {
     Parse(String),
     #[error("status {0}")]
     Status(u16),
+    #[error("timed out")]
+    Timeout,
     #[error("cancelled")]
     Cancelled,
     #[error("config: {0}")]
@@ -81,9 +94,24 @@ pub enum IndexerError {
 
 impl From<reqwest::Error> for IndexerError {
     fn from(e: reqwest::Error) -> Self {
+        if e.is_timeout() {
+            return Self::Timeout;
+        }
         // Strip the URL so API keys never reach the UI or logs.
         Self::Http(e.without_url().to_string())
     }
+}
+
+/// Static description of one configured indexer instance.
+#[derive(Debug, Clone)]
+pub struct IndexerMeta {
+    pub id: String,
+    pub name: String,
+    pub source_type: SourceType,
+    pub categories: Vec<Category>,
+    pub base_urls: Vec<String>,
+    pub proxy: ProxyOverride,
+    pub timeout_ms: Option<u64>,
 }
 
 /// Everything an adapter needs to run one search.
@@ -93,13 +121,7 @@ pub struct SearchContext {
 
 #[async_trait]
 pub trait Indexer: Send + Sync {
-    fn id(&self) -> &str;
-    fn name(&self) -> &str;
-    fn source_type(&self) -> SourceType;
-    fn categories(&self) -> &[Category];
-    fn base_urls(&self) -> &[String];
-    fn proxy_override(&self) -> &ProxyOverride;
-    fn timeout_ms(&self) -> Option<u64>;
+    fn meta(&self) -> &IndexerMeta;
 
     async fn search(
         &self,
