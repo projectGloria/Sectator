@@ -18,7 +18,7 @@ Local-first Windows desktop torrent meta-search engine: Tauri v2 + Rust (`tokio`
 - `src-tauri/src/clients/` — qBittorrent WebUI and Transmission RPC push/test; `clients/download/` is the built-in downloader (`Downloader`: lazy session, fast-resume files in `<appdata>/downloads`, seed-ratio stop) over the `cxx` bridge `ffi.rs` ↔ `src-tauri/cpp/lt_bridge.{h,cpp}`.
 - `src-tauri/src/storage/` — SQLite: FTS5 torrent cache (`cache.rs`), history/presets/bookmarks/indexer health (`library.rs`), settings (`settings.rs`).
 - `src/App.tsx` + `src/hooks/useSearch.ts` — UI shell and streaming search state; typed IPC wrappers in `src/lib/api.ts`, payload types in `src/lib/types.ts`.
-- `.github/workflows/release.yml` — on push to `main` with a changed version: test, build, pack with `gloria-setup`, publish a release.
+- `.github/workflows/release.yml` — from `GloriaSetup/templates/release.yml`; runs only via `gh workflow run release.yml` (/monjita-github-release). Shared `check` and `release` jobs come from GloriaSetup; only the `build` job (npm ci, vcpkg cache, tests, `tauri build --no-bundle`, stage `sectator.exe`) is Sectator's own.
 - **Version Manifests:** `package.json`, `src-tauri/Cargo.toml`, `src-tauri/tauri.conf.json`, `gloria.toml` (synced by `scripts/version.mjs`).
 
 ## Personal Rules (Brain)

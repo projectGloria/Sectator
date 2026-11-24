@@ -6,4 +6,4 @@ icon = "src-tauri/icons/icon.ico"
 accent = "#22d3ee"
 description = "Local-first torrent meta-search engine"
 needs_webview2 = true
-data_folders = ["%APPDATA%\dev.gloria.sectator", "%LOCALAPPDATA%\dev.gloria.sectator"]
+data_folders = ['%APPDATA%\dev.gloria.sectator', '%LOCALAPPDATA%\dev.gloria.sectator']

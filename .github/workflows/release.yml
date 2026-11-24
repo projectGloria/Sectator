@@ -1,60 +1,44 @@
-name: release
+# projectGloria app release (from GloriaSetup/templates/release.yml; only the `build` job is Sectator's own).
+#
+# Runs only when started on purpose: /monjita-github-release, or `gh workflow run release.yml`.
+# Pushing to main never releases.
+#
+#   check   (shared)  version files agree, version not released yet, gloria.toml valid, picks newest gloria-setup
+#   build   (this repo) builds the app and uploads its files as the artifact `app`
+#   release (shared)  packs with that gloria-setup + dry run (or, without gloria.toml, publishes the files as-is),
+#                     then publishes GitHub Release v<version> with SHA256SUMS.txt
+#
+# The shared jobs live in projectGloria/GloriaSetup and are used from @main, so every release picks up
+# the newest checks and the newest gloria-setup without editing this file.
+name: Release
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
     inputs:
       dry_run:
-        description: Build and verify the installer without publishing a release
+        description: Build and verify everything, but do not publish
         type: boolean
-        default: true
+        default: false
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release
   cancel-in-progress: false
 
 jobs:
-  version:
-    runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.v.outputs.version }}
-      build: ${{ steps.v.outputs.build }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - id: v
-        shell: bash
-        env:
-          BEFORE: ${{ github.event.before }}
-          EVENT: ${{ github.event_name }}
-        run: |
-          node scripts/version.mjs --check
-          version=$(node -p "require('./package.json').version")
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          build=false
-          if [ "$EVENT" = "workflow_dispatch" ]; then
-            build=true
-          elif [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
-            build=true
-          else
-            git fetch --depth=1 origin "$BEFORE"
-            previous=$(git show "$BEFORE:package.json" | node -p "JSON.parse(require('fs').readFileSync(0, 'utf8')).version")
-            echo "previous=$previous current=$version"
-            [ "$previous" != "$version" ] && build=true
-          fi
-          echo "build=$build" >> "$GITHUB_OUTPUT"
+  check:
+    uses: projectGloria/GloriaSetup/.github/workflows/app-check.yml@main
 
   build:
-    needs: version
-    if: needs.version.outputs.build == 'true'
+    needs: check
     runs-on: windows-latest
     env:
-      VERSION: ${{ needs.version.outputs.version }}
+      VERSION: ${{ needs.check.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 22
@@ -62,11 +46,11 @@ jobs:
       - name: Install dependencies
         shell: pwsh
         run: npm ci
-      # libtorrent + Boost + OpenSSL for the built-in downloader, built once per
-      # vcpkg.json change and restored from the Actions cache afterwards.
+      # libtorrent + Boost + OpenSSL for the built-in downloader (~20 min to build). Restored from the
+      # Actions cache; saved right after building so a later failing step can't throw the build away.
       - name: Restore native dependencies
         id: native
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: src-tauri/vcpkg_installed
           key: vcpkg-x64-windows-static-md-${{ hashFiles('src-tauri/vcpkg.json') }}
@@ -84,6 +68,16 @@ jobs:
           $code = $LASTEXITCODE
           Pop-Location
           if ($code -ne 0) { exit $code }
+      - name: Save native dependencies
+        if: steps.native.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: src-tauri/vcpkg_installed
+          key: vcpkg-x64-windows-static-md-${{ hashFiles('src-tauri/vcpkg.json') }}
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          workspaces: src-tauri
+          cache-on-failure: true
       - name: Test
         shell: pwsh
         run: |
@@ -92,62 +86,25 @@ jobs:
           npm run typecheck
       - name: Build app
         shell: pwsh
-        run: npx tauri build --no-bundle
-      - name: Stage app and WebView2 bootstrapper
-        shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force stage, vendor | Out-Null
-          Copy-Item src-tauri/target/release/sectator.exe stage/
-          # Bundled into the installer so nothing is downloaded at install time.
-          Invoke-WebRequest -Uri https://go.microsoft.com/fwlink/p/?LinkId=2124703 -OutFile vendor/MicrosoftEdgeWebview2Setup.exe
-          $sig = Get-AuthenticodeSignature vendor/MicrosoftEdgeWebview2Setup.exe
-          if ($sig.Status -ne 'Valid' -or $sig.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation') { throw "WebView2 bootstrapper signature check failed: $($sig.Status)" }
-      - name: Pack installer
-        shell: pwsh
-        run: |
-          npx --yes gloria-setup@0.2.4 --app stage --manifest gloria.toml --version $env:VERSION --webview2-bootstrapper vendor/MicrosoftEdgeWebview2Setup.exe --out dist
+          npx tauri build --no-bundle
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Verify installer (dry run)
-        shell: pwsh
-        run: |
-          $setup = "dist/Sectator_$($env:VERSION)_x64-setup.exe"
-          if (-not (Test-Path $setup)) { throw "missing $setup" }
-          $p = Start-Process -FilePath $setup -ArgumentList '/S --dry-run' -Wait -PassThru
-          if ($p.ExitCode -ne 0) { throw "dry run exited $($p.ExitCode)" }
+          New-Item -ItemType Directory -Force stage | Out-Null
+          Copy-Item src-tauri/target/release/sectator.exe stage/
+
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: installer
-          path: dist/Sectator_${{ needs.version.outputs.version }}_x64-setup.exe
-          compression-level: 0
+          name: app
+          path: stage/
           if-no-files-found: error
 
-  publish:
-    needs: [version, build]
-    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || !inputs.dry_run)
-    runs-on: ubuntu-latest
+  release:
+    needs: [check, build]
+    uses: projectGloria/GloriaSetup/.github/workflows/app-release.yml@main
     permissions:
       contents: write
-    env:
-      VERSION: ${{ needs.version.outputs.version }}
-      GH_TOKEN: ${{ github.token }}
-      GH_REPO: ${{ github.repository }}
-    steps:
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
-        with:
-          name: installer
-          path: out
-      - name: Publish release
-        shell: bash
-        run: |
-          set -euo pipefail
-          tag="v$VERSION"
-          setup="Sectator_${VERSION}_x64-setup.exe"
-          cd out
-          sha256sum "$setup" > SHA256SUMS.txt
-          flags=(--draft --title "Sectator $VERSION" --target "$GITHUB_SHA" --generate-notes)
-          [[ "$VERSION" == *-* ]] && flags+=(--prerelease)
-          gh release create "$tag" "${flags[@]}" "$setup" SHA256SUMS.txt
-          mkdir -p ../verify && cd ../verify
-          gh release download "$tag" --pattern "$setup" --pattern SHA256SUMS.txt
-          sha256sum --check SHA256SUMS.txt
-          gh release edit "$tag" --draft=false
+    with:
+      version: ${{ needs.check.outputs.version }}
+      installer: ${{ needs.check.outputs.installer == 'true' }}
+      gloria_setup: ${{ needs.check.outputs.gloria_setup }}
+      dry_run: ${{ inputs.dry_run }}
