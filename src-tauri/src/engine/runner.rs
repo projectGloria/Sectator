@@ -470,4 +470,34 @@ mod tests {
         let broken = indexers.iter().find(|s| s.indexer_id == "broken").unwrap();
         assert_eq!(broken.state, IndexerState::Skipped);
     }
+
+    /// Live network smoke test against the default indexer set: `cargo test -- --ignored live_`.
+    #[tokio::test]
+    #[ignore]
+    async fn live_default_indexers() {
+        let ixs: Vec<Arc<dyn Indexer>> = crate::indexers::registry::default_configs()
+            .iter()
+            .filter(|c| c.enabled)
+            .filter_map(|c| crate::indexers::registry::build(c).ok())
+            .collect();
+        let engine = Engine::new(ixs, EngineConfig::default());
+        let (sink, events) = collector();
+        engine.search("ubuntu 24.04", sink).await;
+        let ev = events.lock().unwrap();
+        let mut total = 0;
+        let mut live = 0;
+        for e in ev.iter() {
+            match e {
+                SearchEvent::Status { status, .. } => eprintln!("{:<8} {:?} {:?}ms n={} {:?}", status.indexer_id, status.state, status.latency_ms, status.count, status.error),
+                SearchEvent::Results { results, .. } => live += results.iter().filter(|r| r.live.is_some()).count(),
+                SearchEvent::Done { total: t, elapsed_ms, .. } => {
+                    total = *t;
+                    eprintln!("done: {t} results in {elapsed_ms}ms");
+                }
+                _ => {}
+            }
+        }
+        eprintln!("live-scraped upserts: {live}");
+        assert!(total > 0);
+    }
 }

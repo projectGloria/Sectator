@@ -27,7 +27,7 @@ pub fn run() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![commands::app_info, commands::search, commands::cancel_search])
+        .invoke_handler(tauri::generate_handler![commands::app_info, commands::search, commands::cancel_search, commands::open_magnet])
         .run(tauri::generate_context!())
         .expect("error while running Sectator");
 }
