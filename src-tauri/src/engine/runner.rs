@@ -28,10 +28,35 @@ pub enum SearchEvent {
     /// Previously sent results that no longer pass the filters.
     Removed { search_id: u64, hashes: Vec<String> },
     Scraping { search_id: u64, count: usize },
-    Done { search_id: u64, total: usize, elapsed_ms: u64, cancelled: bool },
+    Done { search_id: u64, total: usize, elapsed_ms: u64, cancelled: bool, origin: Origin },
+}
+
+/// Where a search's results came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Origin {
+    Network,
+    /// Replayed from the local result cache (within the TTL).
+    Cache,
+    /// Every source failed; results come from the local FTS index.
+    Offline,
 }
 
 pub type Sink = Arc<dyn Fn(SearchEvent) + Send + Sync>;
+
+/// Local lookup used when the network yields nothing because sources failed.
+pub type OfflineSource = Arc<dyn Fn(&SearchQuery) -> Vec<TorrentResult> + Send + Sync>;
+
+/// What a finished search produced, for caching and stats.
+#[derive(Debug, Clone)]
+pub struct SearchOutcome {
+    pub id: u64,
+    /// Every merged result, before query filters (the cache re-filters on replay).
+    pub results: Vec<TorrentResult>,
+    pub statuses: Vec<IndexerStatus>,
+    pub cancelled: bool,
+    pub origin: Origin,
+}
 
 #[derive(Debug, Clone)]
 pub struct EngineConfig {
@@ -54,6 +79,7 @@ pub struct Engine {
     breaker: Breaker,
     current: Mutex<Option<(u64, CancellationToken)>>,
     next_id: AtomicU64,
+    offline: RwLock<Option<OfflineSource>>,
 }
 
 /// Does this indexer have anything to contribute to the query?
@@ -112,7 +138,55 @@ impl Engine {
             breaker: Breaker::new(),
             current: Mutex::new(None),
             next_id: AtomicU64::new(1),
+            offline: RwLock::new(None),
         }
+    }
+
+    pub fn set_offline_source(&self, src: OfflineSource) {
+        *self.offline.write().unwrap() = Some(src);
+    }
+
+    /// Result-cache key: the network-relevant query text plus the exact set of
+    /// indexers it fans out to, so site/cat scoping or a settings change never
+    /// replays a narrower or stale result set.
+    pub fn cache_key(&self, q: &SearchQuery) -> String {
+        let mut ids: Vec<String> = self.indexers.read().unwrap().iter().filter(|ix| eligible(ix.as_ref(), q)).map(|ix| ix.meta().id.clone()).collect();
+        ids.sort();
+        format!("{}#{}", q.cache_key(), ids.join(","))
+    }
+
+    fn begin(&self) -> (u64, CancellationToken) {
+        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        let cancel = CancellationToken::new();
+        if let Some((_, prev)) = self.current.lock().unwrap().replace((id, cancel.clone())) {
+            prev.cancel();
+        }
+        (id, cancel)
+    }
+
+    fn finish(&self, id: u64) {
+        // Still the active search: clear the slot so a later `cancel()` is a no-op.
+        let mut guard = self.current.lock().unwrap();
+        if guard.as_ref().is_some_and(|(cur, _)| *cur == id) {
+            *guard = None;
+        }
+    }
+
+    /// Stream previously stored results as if they had just arrived: re-scored and
+    /// re-filtered against this exact query. Cancels any running search.
+    pub fn replay(&self, raw: &str, cached: Vec<TorrentResult>, origin: Origin, sink: Sink) -> u64 {
+        let started = Instant::now();
+        let (id, _) = self.begin();
+        let q = SearchQuery::parse(raw);
+        sink(SearchEvent::Started { search_id: id, query: q.clone(), indexers: vec![] });
+        let shown = filter_ranked(cached, &q, chrono::Utc::now().timestamp());
+        let total = shown.len();
+        if !shown.is_empty() {
+            sink(SearchEvent::Results { search_id: id, results: shown });
+        }
+        self.finish(id);
+        sink(SearchEvent::Done { search_id: id, total, elapsed_ms: started.elapsed().as_millis() as u64, cancelled: false, origin });
+        id
     }
 
     pub fn set_indexers(&self, indexers: Vec<Arc<dyn Indexer>>) {
@@ -138,12 +212,8 @@ impl Engine {
 
     /// Run one search to completion, streaming events to `sink`. Starting a new
     /// search cancels the previous one. Returns the search id.
-    pub async fn search(&self, raw: &str, sink: Sink) -> u64 {
-        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
-        let cancel = CancellationToken::new();
-        if let Some((_, prev)) = self.current.lock().unwrap().replace((id, cancel.clone())) {
-            prev.cancel();
-        }
+    pub async fn search(&self, raw: &str, sink: Sink) -> SearchOutcome {
+        let (id, cancel) = self.begin();
         let started = Instant::now();
         let q = SearchQuery::parse(raw);
         let cfg = self.config();
@@ -196,6 +266,7 @@ impl Engine {
                 (ix.meta().id.clone(), r, t0.elapsed().as_millis() as u64)
             });
         }
+        let mut statuses: Vec<IndexerStatus> = initial.clone();
         sink(SearchEvent::Started { search_id: id, query: q.clone(), indexers: initial });
 
         // Fan-in: merge each batch as it lands.
@@ -242,6 +313,9 @@ impl Engine {
                     st.error = Some(e.to_string());
                 }
             }
+            if let Some(slot) = statuses.iter_mut().find(|s| s.indexer_id == st.indexer_id) {
+                *slot = st.clone();
+            }
             sink(SearchEvent::Status { search_id: id, status: st });
         }
         if cancelled {
@@ -249,8 +323,27 @@ impl Engine {
             for t in &trials {
                 self.breaker.record_neutral(t);
             }
-            sink(SearchEvent::Done { search_id: id, total: sent.len(), elapsed_ms: started.elapsed().as_millis() as u64, cancelled: true });
-            return id;
+            for s in statuses.iter_mut().filter(|s| s.state == IndexerState::Searching) {
+                s.state = IndexerState::Cancelled;
+            }
+            sink(SearchEvent::Done { search_id: id, total: sent.len(), elapsed_ms: started.elapsed().as_millis() as u64, cancelled: true, origin: Origin::Network });
+            return SearchOutcome { id, results: merger.into_results(), statuses, cancelled: true, origin: Origin::Network };
+        }
+
+        // Nothing came back and at least one source failed: fall back to the local index.
+        let failed = statuses.iter().any(|s| matches!(s.state, IndexerState::Error | IndexerState::Timeout | IndexerState::Skipped));
+        let offline = self.offline.read().unwrap().clone();
+        if merger.is_empty() && failed && !q.is_empty() {
+            if let Some(local) = offline {
+                let shown = filter_ranked(local(&q), &q, now);
+                let total = shown.len();
+                if !shown.is_empty() {
+                    sink(SearchEvent::Results { search_id: id, results: shown });
+                }
+                self.finish(id);
+                sink(SearchEvent::Done { search_id: id, total, elapsed_ms: started.elapsed().as_millis() as u64, cancelled: false, origin: Origin::Offline });
+                return SearchOutcome { id, results: vec![], statuses, cancelled: false, origin: Origin::Offline };
+            }
         }
 
         // Live scrape: DHT-index results (no seed data) first, then the best-ranked.
@@ -288,16 +381,24 @@ impl Engine {
             }
         }
 
-        {
-            // Still the active search: clear the slot so a later `cancel()` is a no-op.
-            let mut guard = self.current.lock().unwrap();
-            if guard.as_ref().is_some_and(|(cur, _)| *cur == id) {
-                *guard = None;
-            }
-        }
-        sink(SearchEvent::Done { search_id: id, total: sent.len(), elapsed_ms: started.elapsed().as_millis() as u64, cancelled });
-        id
+        self.finish(id);
+        sink(SearchEvent::Done { search_id: id, total: sent.len(), elapsed_ms: started.elapsed().as_millis() as u64, cancelled, origin: Origin::Network });
+        SearchOutcome { id, results: merger.into_results(), statuses, cancelled, origin: Origin::Network }
     }
+}
+
+/// Score, filter and rank stored results against `q`.
+fn filter_ranked(results: Vec<TorrentResult>, q: &SearchQuery, now: i64) -> Vec<TorrentResult> {
+    let mut out: Vec<TorrentResult> = results
+        .into_iter()
+        .map(|mut r| {
+            score::evaluate(&mut r, q, now);
+            r
+        })
+        .filter(|r| score::passes_filters(r, q))
+        .collect();
+    score::rank(&mut out);
+    out
 }
 
 #[cfg(test)]
@@ -469,6 +570,39 @@ mod tests {
         let SearchEvent::Started { indexers, .. } = &ev[0] else { panic!() };
         let broken = indexers.iter().find(|s| s.indexer_id == "broken").unwrap();
         assert_eq!(broken.state, IndexerState::Skipped);
+    }
+
+    #[tokio::test]
+    async fn outcome_replay_and_offline_fallback() {
+        let engine = Engine::new(vec![FixtureIndexer::new("tpb", SourceType::Curated, 0, apibay_fx)], no_scrape());
+        let out = engine.search("ubuntu", Arc::new(|_| {})).await;
+        assert_eq!(out.origin, Origin::Network);
+        assert!(!out.results.is_empty());
+        assert_eq!(out.statuses[0].state, IndexerState::Ok);
+
+        // Replay re-applies filters that the cache key ignores.
+        let (sink, events) = collector();
+        engine.replay("ubuntu cat:books", out.results.clone(), Origin::Cache, sink);
+        let ev = events.lock().unwrap();
+        assert!(matches!(ev.last(), Some(SearchEvent::Done { origin: Origin::Cache, .. })));
+        for e in ev.iter() {
+            if let SearchEvent::Results { results, .. } = e {
+                assert!(results.iter().all(|r| score::effective_category(r) == Some(Category::Books)));
+            }
+        }
+        assert_ne!(engine.cache_key(&SearchQuery::parse("ubuntu")), engine.cache_key(&SearchQuery::parse("ubuntu site:nyaa")));
+        assert_eq!(engine.cache_key(&SearchQuery::parse("ubuntu")), engine.cache_key(&SearchQuery::parse("ubuntu seeds:>5")));
+
+        // Every source failing hands over to the local index.
+        let down = Engine::new(vec![FixtureIndexer::failing("broken")], no_scrape());
+        let stored = out.results.clone();
+        down.set_offline_source(Arc::new(move |_| stored.clone()));
+        let (sink, events) = collector();
+        let o = down.search("ubuntu", sink).await;
+        assert_eq!(o.origin, Origin::Offline);
+        let ev = events.lock().unwrap();
+        assert!(ev.iter().any(|e| matches!(e, SearchEvent::Results { results, .. } if !results.is_empty())));
+        assert!(matches!(ev.last(), Some(SearchEvent::Done { origin: Origin::Offline, total, .. }) if *total > 0));
     }
 
     /// Live network smoke test against the default indexer set: `cargo test -- --ignored live_`.

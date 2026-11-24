@@ -1,6 +1,6 @@
-import { Shield } from "lucide-react";
+import { Database, Shield, WifiOff } from "lucide-react";
 import type { Phase } from "../hooks/useSearch";
-import type { IndexerState, IndexerStatus } from "../lib/types";
+import type { IndexerState, IndexerStatus, Origin } from "../lib/types";
 
 const STATE_COLOR: Record<IndexerState, string> = {
   searching: "bg-accent animate-pulse",
@@ -19,9 +19,10 @@ interface Props {
   scraping: number;
   elapsedMs: number | null;
   error: string | null;
+  origin: Origin | null;
 }
 
-export function StatusBar({ phase, statuses, total, shown, scraping, elapsedMs, error }: Props) {
+export function StatusBar({ phase, statuses, total, shown, scraping, elapsedMs, error, origin }: Props) {
   const summary =
     phase === "error"
       ? error
@@ -37,6 +38,16 @@ export function StatusBar({ phase, statuses, total, shown, scraping, elapsedMs, 
   return (
     <footer className="chrome flex h-6 shrink-0 items-center gap-3 overflow-hidden border-t border-line bg-panel px-3 text-[11px] text-dim">
       <span className={`shrink-0 ${phase === "error" ? "text-bad" : ""}`}>{summary}</span>
+      {phase === "done" && origin === "cache" && (
+        <span className="flex shrink-0 items-center gap-1 text-accent" title="Replayed from the local cache. Ctrl+R or F5 searches live.">
+          <Database size={10} /> cached · Ctrl+R to refresh
+        </span>
+      )}
+      {phase === "done" && origin === "offline" && (
+        <span className="flex shrink-0 items-center gap-1 text-warn" title="Every source failed; these results come from the local index.">
+          <WifiOff size={10} /> offline · local index
+        </span>
+      )}
       <div className="ml-auto flex min-w-0 items-center gap-3 overflow-hidden">
         {statuses.map((s) => (
           <span

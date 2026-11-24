@@ -92,7 +92,84 @@ export type SearchEvent =
   | { event: "results"; searchId: number; results: TorrentResult[] }
   | { event: "removed"; searchId: number; hashes: string[] }
   | { event: "scraping"; searchId: number; count: number }
-  | { event: "done"; searchId: number; total: number; elapsedMs: number; cancelled: boolean };
+  | { event: "done"; searchId: number; total: number; elapsedMs: number; cancelled: boolean; origin: Origin };
+
+/** Where results came from: live sources, the result cache, or the local index after every source failed. */
+export type Origin = "network" | "cache" | "offline";
 
 export const seedersOf = (r: TorrentResult) => r.live?.seeders ?? r.seeders;
 export const leechersOf = (r: TorrentResult) => r.live?.leechers ?? r.leechers;
+
+// ---- settings & library (src-tauri/src/storage, clients) ----
+
+export type ProxyOverride = { mode: "inherit" } | { mode: "direct" } | { mode: "custom"; url: string };
+
+export interface IndexerConfig {
+  id: string;
+  name: string;
+  kind: string;
+  enabled: boolean;
+  baseUrls: string[];
+  proxy: ProxyOverride;
+  timeoutMs: number | null;
+  apiKey: string | null;
+}
+
+export interface NetworkSettings {
+  userAgent: string;
+  proxy: string | null;
+  dohUrl: string | null;
+  clearnetTimeoutMs: number;
+  torTimeoutMs: number;
+}
+
+export type ClientKind = "qbittorrent" | "transmission";
+
+export interface ClientConfig {
+  id: string;
+  kind: ClientKind;
+  name: string;
+  url: string;
+  username: string | null;
+  password: string | null;
+  savePath: string | null;
+  category: string | null;
+  paused: boolean;
+}
+
+export interface AppSettings {
+  net: NetworkSettings;
+  indexers: IndexerConfig[];
+  cacheTtlSecs: number;
+  scrapeTop: number;
+  clients: ClientConfig[];
+  defaultClient: string | null;
+}
+
+export interface HistoryEntry {
+  query: string;
+  lastUsed: number;
+  uses: number;
+}
+
+export interface Preset {
+  name: string;
+  query: string;
+}
+
+export interface Bookmark {
+  infoHash: string;
+  title: string;
+  magnet: string;
+  size: number;
+  createdAt: number;
+}
+
+export interface IndexerHealth {
+  indexerId: string;
+  searches: number;
+  failures: number;
+  avgLatencyMs: number | null;
+  lastOkAt: number | null;
+  lastError: string | null;
+}

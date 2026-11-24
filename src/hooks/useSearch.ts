@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 import { Channel, invoke } from "@tauri-apps/api/core";
-import type { IndexerStatus, SearchEvent, TorrentResult } from "../lib/types";
+import type { IndexerStatus, Origin, SearchEvent, TorrentResult } from "../lib/types";
 
 export type Phase = "idle" | "searching" | "scraping" | "done" | "cancelled" | "error";
 
@@ -13,6 +13,7 @@ export interface SearchState {
   statuses: IndexerStatus[];
   scraping: number;
   elapsedMs: number | null;
+  origin: Origin | null;
   error: string | null;
 }
 
@@ -24,6 +25,7 @@ const empty = (): SearchState => ({
   statuses: [],
   scraping: 0,
   elapsedMs: null,
+  origin: null,
   error: null,
 });
 
@@ -53,7 +55,8 @@ export function useSearch() {
   }, []);
 
   const search = useCallback(
-    (query: string) => {
+    /** `force` skips the result cache and always asks the live sources. */
+    (query: string, force = false) => {
       const text = query.trim();
       const token = ++active.current;
       queue.current = [];
@@ -71,7 +74,7 @@ export function useSearch() {
         queue.current.push({ ...ev, searchId: token });
         if (frame.current === null) frame.current = requestAnimationFrame(flush);
       };
-      invoke<number>("search", { query: text, onEvent: channel }).catch((e) => {
+      invoke<number>("search", { query: text, force, onEvent: channel }).catch((e) => {
         if (active.current === token) setState((s) => ({ ...s, phase: "error", error: String(e) }));
       });
     },
@@ -102,6 +105,6 @@ function apply(s: SearchState, ev: SearchEvent): SearchState {
     case "scraping":
       return { ...s, phase: "scraping", scraping: ev.count };
     case "done":
-      return { ...s, phase: ev.cancelled ? "cancelled" : "done", elapsedMs: ev.elapsedMs, scraping: 0 };
+      return { ...s, phase: ev.cancelled ? "cancelled" : "done", elapsedMs: ev.elapsedMs, origin: ev.origin, scraping: 0 };
   }
 }

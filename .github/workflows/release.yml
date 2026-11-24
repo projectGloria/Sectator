@@ -1,0 +1,131 @@
+name: release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Build and verify the installer without publishing a release
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      build: ${{ steps.v.outputs.build }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - id: v
+        shell: bash
+        env:
+          BEFORE: ${{ github.event.before }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          node scripts/version.mjs --check
+          version=$(node -p "require('./package.json').version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          build=false
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            build=true
+          elif [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            build=true
+          else
+            git fetch --depth=1 origin "$BEFORE"
+            previous=$(git show "$BEFORE:package.json" | node -p "JSON.parse(require('fs').readFileSync(0, 'utf8')).version")
+            echo "previous=$previous current=$version"
+            [ "$previous" != "$version" ] && build=true
+          fi
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: version
+    if: needs.version.outputs.build == 'true'
+    runs-on: windows-latest
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        shell: pwsh
+        run: npm ci
+      - name: Test
+        shell: pwsh
+        run: |
+          cargo test --manifest-path src-tauri/Cargo.toml --lib
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run typecheck
+      - name: Build app
+        shell: pwsh
+        run: npx tauri build --no-bundle
+      - name: Stage app and WebView2 bootstrapper
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force stage, vendor | Out-Null
+          Copy-Item src-tauri/target/release/sectator.exe stage/
+          # Bundled into the installer so nothing is downloaded at install time.
+          Invoke-WebRequest -Uri https://go.microsoft.com/fwlink/p/?LinkId=2124703 -OutFile vendor/MicrosoftEdgeWebview2Setup.exe
+          $sig = Get-AuthenticodeSignature vendor/MicrosoftEdgeWebview2Setup.exe
+          if ($sig.Status -ne 'Valid' -or $sig.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation') { throw "WebView2 bootstrapper signature check failed: $($sig.Status)" }
+      - name: Pack installer
+        shell: pwsh
+        run: |
+          npx --yes gloria-setup@0.2.4 --app stage --manifest gloria.toml --version $env:VERSION --webview2-bootstrapper vendor/MicrosoftEdgeWebview2Setup.exe --out dist
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify installer (dry run)
+        shell: pwsh
+        run: |
+          $setup = "dist/Sectator_$($env:VERSION)_x64-setup.exe"
+          if (-not (Test-Path $setup)) { throw "missing $setup" }
+          $p = Start-Process -FilePath $setup -ArgumentList '/S --dry-run' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "dry run exited $($p.ExitCode)" }
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: installer
+          path: dist/Sectator_${{ needs.version.outputs.version }}_x64-setup.exe
+          compression-level: 0
+          if-no-files-found: error
+
+  publish:
+    needs: [version, build]
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || !inputs.dry_run)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: installer
+          path: out
+      - name: Publish release
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="v$VERSION"
+          setup="Sectator_${VERSION}_x64-setup.exe"
+          cd out
+          sha256sum "$setup" > SHA256SUMS.txt
+          flags=(--draft --title "Sectator $VERSION" --target "$GITHUB_SHA" --generate-notes)
+          [[ "$VERSION" == *-* ]] && flags+=(--prerelease)
+          gh release create "$tag" "${flags[@]}" "$setup" SHA256SUMS.txt
+          mkdir -p ../verify && cd ../verify
+          gh release download "$tag" --pattern "$setup" --pattern SHA256SUMS.txt
+          sha256sum --check SHA256SUMS.txt
+          gh release edit "$tag" --draft=false

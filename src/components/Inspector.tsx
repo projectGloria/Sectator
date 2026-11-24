@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { AlertTriangle, ChevronDown, ChevronRight, Copy, File, Folder, Magnet, Radio, X } from "lucide-react";
+import { AlertTriangle, Bookmark, BookmarkCheck, ChevronDown, ChevronRight, Copy, File, Folder, Magnet, Radio, Send, X } from "lucide-react";
 import { FLAG_LABEL, formatAge, formatCount, formatSize } from "../lib/format";
 import { leechersOf, seedersOf, type TorrentFile, type TorrentResult } from "../lib/types";
 import { KIND_DOT } from "./ResultsTable";
@@ -9,9 +9,14 @@ interface Props {
   onClose: () => void;
   onOpen: (r: TorrentResult) => void;
   onCopy: (text: string, what: string) => void;
+  bookmarked: boolean;
+  onBookmark: (r: TorrentResult) => void;
+  /** Name of the default torrent client, if one is configured. */
+  client: string | null;
+  onSend: (r: TorrentResult) => void;
 }
 
-export function Inspector({ r, onClose, onOpen, onCopy }: Props) {
+export function Inspector({ r, onClose, onOpen, onCopy, bookmarked, onBookmark, client, onSend }: Props) {
   const seeds = seedersOf(r);
   const leech = leechersOf(r);
   const tags = [
@@ -63,7 +68,23 @@ export function Inspector({ r, onClose, onOpen, onCopy }: Props) {
           >
             <Copy size={12} /> Copy
           </button>
+          <button
+            onClick={() => onBookmark(r)}
+            aria-label={bookmarked ? "Remove bookmark" : "Bookmark"}
+            title={bookmarked ? "Remove bookmark" : "Bookmark"}
+            className={`chrome flex h-8 w-8 items-center justify-center rounded-md border border-line transition-colors duration-150 hover:border-[#2e333d] active:bg-raised ${bookmarked ? "text-accent" : "text-dim hover:text-fg"}`}
+          >
+            {bookmarked ? <BookmarkCheck size={13} /> : <Bookmark size={13} />}
+          </button>
         </div>
+        {client && (
+          <button
+            onClick={() => onSend(r)}
+            className="chrome mt-2 flex h-7 w-full items-center justify-center gap-1.5 rounded-md border border-line text-[12px] text-dim transition-colors duration-150 hover:border-[#2e333d] hover:text-fg active:bg-raised"
+          >
+            <Send size={12} /> Send to {client}
+          </button>
+        )}
 
         {r.flags.length > 0 && (
           <div className="mt-3 space-y-1 rounded-md border border-warn/25 bg-warn/5 p-2">

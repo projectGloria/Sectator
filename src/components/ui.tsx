@@ -1,0 +1,93 @@
+// Custom-styled form controls with explicit hover / active / focus-visible / disabled states.
+import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from "react";
+
+type Tone = "default" | "primary" | "danger" | "ghost";
+
+const TONE: Record<Tone, string> = {
+  default: "border border-line bg-raised text-fg hover:border-[#2e333d] hover:bg-[#1b1f27] active:bg-line",
+  primary: "bg-accent font-medium text-bg hover:bg-[#4fe0f5] active:bg-[#1bb8d1]",
+  danger: "border border-bad/30 text-bad hover:bg-bad/10 active:bg-bad/20",
+  ghost: "text-dim hover:bg-raised hover:text-fg active:bg-line",
+};
+
+export function Button({ tone = "default", className = "", ...rest }: ButtonHTMLAttributes<HTMLButtonElement> & { tone?: Tone }) {
+  return (
+    <button
+      type="button"
+      {...rest}
+      className={`chrome inline-flex h-7 items-center justify-center gap-1.5 rounded-md px-2.5 text-[12px] transition-colors duration-150 disabled:pointer-events-none disabled:opacity-40 ${TONE[tone]} ${className}`}
+    />
+  );
+}
+
+export function TextInput({ className = "", mono, ...rest }: InputHTMLAttributes<HTMLInputElement> & { mono?: boolean }) {
+  return (
+    <input
+      spellCheck={false}
+      {...rest}
+      className={`h-7 min-w-0 select-text rounded-md border border-line bg-bg px-2 text-[12px] outline-none transition-colors duration-150 placeholder:text-faint hover:border-[#2e333d] focus-visible:border-accent/60 disabled:opacity-40 ${mono ? "num" : ""} ${className}`}
+      style={{ outline: "none" }}
+    />
+  );
+}
+
+export function NumberInput({ value, onChange, min, max, className = "" }: { value: number; onChange: (n: number) => void; min?: number; max?: number; className?: string }) {
+  return (
+    <TextInput
+      mono
+      inputMode="numeric"
+      value={String(value)}
+      onChange={(e) => {
+        const n = Number(e.target.value.replace(/[^\d]/g, ""));
+        if (Number.isFinite(n)) onChange(max != null ? Math.min(max, n) : n);
+      }}
+      onBlur={() => min != null && value < min && onChange(min)}
+      className={`w-24 text-right ${className}`}
+    />
+  );
+}
+
+export function Toggle({ checked, onChange, label, disabled }: { checked: boolean; onChange: (v: boolean) => void; label: string; disabled?: boolean }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
+      className={`relative h-4 w-7 shrink-0 rounded-full transition-colors duration-150 disabled:opacity-40 ${checked ? "bg-accent hover:bg-[#4fe0f5]" : "bg-line hover:bg-[#2e333d]"}`}
+    >
+      <span className={`absolute top-0.5 h-3 w-3 rounded-full bg-fg transition-transform duration-150 ${checked ? "translate-x-3.5" : "translate-x-0.5"}`} />
+    </button>
+  );
+}
+
+/** A segmented control in place of a native <select>. */
+export function Segmented<T extends string>({ value, options, onChange }: { value: T; options: [T, string][]; onChange: (v: T) => void }) {
+  return (
+    <div className="chrome inline-flex h-7 rounded-md border border-line p-0.5">
+      {options.map(([v, label]) => (
+        <button
+          key={v}
+          type="button"
+          onClick={() => onChange(v)}
+          className={`rounded px-2 text-[11.5px] transition-colors duration-150 ${v === value ? "bg-raised text-fg" : "text-dim hover:text-fg active:bg-line"}`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+export function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
+  return (
+    <div className="grid grid-cols-[150px_1fr] items-center gap-3 py-1">
+      <span className="chrome text-[12px] text-dim" title={hint}>
+        {label}
+      </span>
+      <div className="flex min-w-0 items-center gap-2">{children}</div>
+    </div>
+  );
+}

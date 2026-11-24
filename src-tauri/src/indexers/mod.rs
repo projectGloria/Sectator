@@ -53,7 +53,7 @@ pub struct IndexerConfig {
 
 /// Global network settings applied to every indexer unless overridden.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", default)]
 pub struct NetworkSettings {
     pub user_agent: String,
     /// Global proxy, e.g. `http://127.0.0.1:8080` or `socks5h://127.0.0.1:9050`.

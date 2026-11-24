@@ -1,5 +1,9 @@
 //! Local SQLite store (FTS5 cache, history, presets, bookmarks, indexer stats, settings).
 
+pub mod cache;
+pub mod library;
+pub mod settings;
+
 use std::path::Path;
 use std::sync::Mutex;
 

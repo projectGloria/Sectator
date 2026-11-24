@@ -6,8 +6,11 @@ import { SearchBar } from "./components/SearchBar";
 import { ResultsTable, sortResults, type Sort } from "./components/ResultsTable";
 import { Inspector } from "./components/Inspector";
 import { StatusBar } from "./components/StatusBar";
+import { Sidebar } from "./components/Sidebar";
+import { SettingsModal } from "./components/SettingsModal";
 import { useSearch } from "./hooks/useSearch";
-import type { TorrentResult } from "./lib/types";
+import { api } from "./lib/api";
+import type { AppSettings, TorrentResult } from "./lib/types";
 
 const SHORTCUTS: [string, string][] = [
   ["Ctrl K  /", "Focus search"],
@@ -15,6 +18,9 @@ const SHORTCUTS: [string, string][] = [
   ["↑ ↓  J K", "Move selection"],
   ["Ctrl C", "Copy magnet"],
   ["I", "Toggle inspector"],
+  ["Ctrl R  F5", "Search live (skip cache)"],
+  ["Ctrl B", "History · presets · bookmarks"],
+  ["Ctrl ,", "Settings"],
   ["Esc", "Stop · clear"],
 ];
 
@@ -25,13 +31,27 @@ export default function App() {
   const [selected, setSelected] = useState<string | null>(null);
   const [inspector, setInspector] = useState(true);
   const [toast, setToast] = useState<string | null>(null);
+  const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [sidebar, setSidebar] = useState(false);
+  const [bookmarks, setBookmarks] = useState<Set<string>>(new Set());
+  const [libKey, setLibKey] = useState(0);
   const input = useRef<HTMLInputElement>(null);
   const { state, search, cancel } = useSearch();
   const busy = state.phase === "searching" || state.phase === "scraping";
 
   useEffect(() => {
     invoke<{ version: string }>("app_info").then((i) => setVersion(i.version));
+    api.getSettings().then(setSettings, () => {});
+    api.bookmarks().then((b) => setBookmarks(new Set(b.map((x) => x.infoHash))), () => {});
   }, []);
+
+  // History is written as each search starts; refresh the sidebar once it settles.
+  useEffect(() => {
+    if (state.phase === "done" || state.phase === "cancelled") setLibKey((k) => k + 1);
+  }, [state.phase]);
+
+  const client = useMemo(() => settings?.clients.find((c) => c.id === settings.defaultClient) ?? null, [settings]);
 
   const rows = useMemo(() => sortResults([...state.results.values()], sort), [state.version, state.results, sort]);
   const current = (selected && state.results.get(selected)) || null;
@@ -51,26 +71,80 @@ export default function App() {
     [notify],
   );
 
-  const open = useCallback(
-    (r: TorrentResult) => {
-      invoke("open_magnet", { magnet: r.magnet }).then(
-        () => notify("Sent to torrent client"),
+  const openMagnet = useCallback(
+    (magnet: string) => {
+      api.openMagnet(magnet).then(
+        () => notify("Opened in the system torrent handler"),
         (e) => notify(`Couldn't open magnet: ${e}`),
       );
     },
     [notify],
   );
+  const open = useCallback((r: TorrentResult) => openMagnet(r.magnet), [openMagnet]);
+
+  const send = useCallback(
+    (r: TorrentResult) => {
+      if (!client) return;
+      api.pushToClient(r.magnet, client.id).then(
+        (o) => notify(o === "added" ? `Added to ${client.name}` : `${client.name} already has this torrent`),
+        (e) => notify(`${client.name}: ${e}`),
+      );
+    },
+    [client, notify],
+  );
+
+  const toggleBookmark = useCallback(
+    (r: TorrentResult) => {
+      const has = bookmarks.has(r.infoHash);
+      (has ? api.removeBookmark(r.infoHash) : api.addBookmark(r)).then(() => {
+        setBookmarks((prev) => {
+          const next = new Set(prev);
+          if (has) next.delete(r.infoHash);
+          else next.add(r.infoHash);
+          return next;
+        });
+        setLibKey((k) => k + 1);
+        notify(has ? "Bookmark removed" : "Bookmarked");
+      }, (e) => notify(String(e)));
+    },
+    [bookmarks, notify],
+  );
 
   const submit = useCallback(
-    (q: string) => {
+    (q: string, force = false) => {
       setSelected(null);
-      search(q);
+      search(q, force);
     },
     [search],
   );
 
+  const run = useCallback(
+    (q: string) => {
+      setText(q);
+      submit(q);
+    },
+    [submit],
+  );
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (settingsOpen) return;
+      const key = e.key.toLowerCase();
+      if ((e.ctrlKey && key === "r") || e.key === "F5") {
+        e.preventDefault(); // never reload the webview
+        if (text.trim()) submit(text, true);
+        return;
+      }
+      if (e.ctrlKey && key === "b") {
+        e.preventDefault();
+        setSidebar((v) => !v);
+        return;
+      }
+      if (e.ctrlKey && e.key === ",") {
+        e.preventDefault();
+        setSettingsOpen(true);
+        return;
+      }
       const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement;
       if ((e.ctrlKey && e.key.toLowerCase() === "k") || (!typing && e.key === "/")) {
         e.preventDefault();
@@ -132,7 +206,7 @@ export default function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [rows, selected, current, busy, cancel, open, copy]);
+  }, [rows, selected, current, busy, cancel, open, copy, settingsOpen, text, submit]);
 
   const empty = (
     <div className="chrome flex h-full flex-col items-center justify-center gap-4 text-dim">
@@ -161,11 +235,23 @@ export default function App() {
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden">
-      <Titlebar version={version} />
+      <Titlebar version={version} onSidebar={() => setSidebar((v) => !v)} onSettings={() => setSettingsOpen(true)} />
       <SearchBar ref={input} value={text} busy={busy} onChange={setText} onSubmit={submit} onCancel={cancel} />
       <div className="relative flex min-h-0 flex-1">
+        {sidebar && <Sidebar refreshKey={libKey} query={text} onRun={run} onOpenMagnet={openMagnet} onNotify={notify} onClose={() => setSidebar(false)} />}
         <ResultsTable rows={rows} selected={selected} sort={sort} onSort={setSort} onSelect={setSelected} onActivate={open} empty={empty} />
-        {inspector && current && <Inspector r={current} onClose={() => setInspector(false)} onOpen={open} onCopy={copy} />}
+        {inspector && current && (
+          <Inspector
+            r={current}
+            onClose={() => setInspector(false)}
+            onOpen={open}
+            onCopy={copy}
+            bookmarked={bookmarks.has(current.infoHash)}
+            onBookmark={toggleBookmark}
+            client={client?.name ?? null}
+            onSend={send}
+          />
+        )}
         {toast && (
           <div className="chrome pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-md border border-line bg-raised px-3 py-1.5 text-[12px] shadow-lg shadow-black/40">
             {toast}
@@ -180,7 +266,9 @@ export default function App() {
         scraping={state.scraping}
         elapsedMs={state.elapsedMs}
         error={state.error}
+        origin={state.origin}
       />
+      {settingsOpen && settings && <SettingsModal initial={settings} onSaved={setSettings} onClose={() => setSettingsOpen(false)} onNotify={notify} />}
     </div>
   );
 }

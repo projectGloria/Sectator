@@ -1,9 +1,9 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { Minus, Square, X } from "lucide-react";
+import { Minus, PanelLeft, Settings, Square, X } from "lucide-react";
 
 const win = getCurrentWindow();
 
-export function Titlebar({ version }: { version?: string }) {
+export function Titlebar({ version, onSidebar, onSettings }: { version?: string; onSidebar: () => void; onSettings: () => void }) {
   return (
     <div
       data-tauri-drag-region
@@ -19,6 +19,13 @@ export function Titlebar({ version }: { version?: string }) {
         {version && <span data-tauri-drag-region className="num text-faint">{version}</span>}
       </span>
       <div className="ml-auto flex h-full">
+        <TitleButton label="History, presets and bookmarks (Ctrl+B)" onClick={onSidebar}>
+          <PanelLeft size={13} />
+        </TitleButton>
+        <TitleButton label="Settings (Ctrl+,)" onClick={onSettings}>
+          <Settings size={13} />
+        </TitleButton>
+        <span className="mx-1 my-2 w-px bg-line" />
         <TitleButton label="Minimize" onClick={() => win.minimize()}>
           <Minus size={13} />
         </TitleButton>
@@ -37,6 +44,7 @@ function TitleButton(props: { label: string; danger?: boolean; onClick: () => vo
   return (
     <button
       aria-label={props.label}
+      title={props.label}
       onClick={props.onClick}
       onDoubleClick={(e) => e.stopPropagation()}
       className={`flex h-full w-11 items-center justify-center text-dim transition-colors duration-150 hover:text-fg ${
