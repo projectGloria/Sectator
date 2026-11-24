@@ -2,6 +2,24 @@
 
 Local-first Windows desktop torrent meta-search engine: Tauri v2 + Rust (`tokio`) backend, React/TypeScript/Vite/Tailwind frontend, fanning out to curated, DHT-index, and Torznab sources and ranking deduplicated results.
 
+## Commands
+- Run / Dev: `npm run tauri dev`
+- Test (all): `npm run test:rust` (= `cargo test --manifest-path src-tauri/Cargo.toml`)
+- Test (single): `cargo test --manifest-path src-tauri/Cargo.toml <test_name>`
+- Typecheck: `npm run typecheck`
+- Build frontend: `npm run build`; app binary: `npx tauri build --no-bundle` (installer is packed by GloriaSetup in CI)
+- Version: `npm run set:version -- <x.y.z-alpha.N>` / `npm run check:version`
+
+## Architecture
+- `src-tauri/src/lib.rs` — builds `Arc<Store>` + `Arc<Engine>` from stored settings, prunes cache (30 days), wires the offline FTS source, registers IPC handlers.
+- `src-tauri/src/engine/runner.rs` — concurrent fan-out, cancellation, circuit breaker, cache replay (`Origin::Cache`) and offline fallback (`Origin::Offline`).
+- `src-tauri/src/commands/` — thin IPC wrappers only; logic lives in `engine/`, `storage/`, `scraper/`, `clients/`.
+- `src-tauri/src/clients/` — qBittorrent WebUI and Transmission RPC push/test.
+- `src-tauri/src/storage/` — SQLite: FTS5 torrent cache (`cache.rs`), history/presets/bookmarks/indexer health (`library.rs`), settings (`settings.rs`).
+- `src/App.tsx` + `src/hooks/useSearch.ts` — UI shell and streaming search state; typed IPC wrappers in `src/lib/api.ts`, payload types in `src/lib/types.ts`.
+- `.github/workflows/release.yml` — on push to `main` with a changed version: test, build, pack with `gloria-setup`, publish a release.
+- **Version Manifests:** `package.json`, `src-tauri/Cargo.toml`, `src-tauri/tauri.conf.json`, `gloria.toml` (synced by `scripts/version.mjs`).
+
 ## Personal Rules (Brain)
 - **Git Branching:** Never create new branches or git worktrees. Always work directly on `main` until explicitly told otherwise.
 - **Versioning (Minimal Changes):** When runtime code or packaging changes, bump the alpha number by `+1` (e.g., `0.1.0-alpha.1` -> `0.1.0-alpha.2`) across all version manifests in the repo **at most once per uncommitted change set** (check `git diff HEAD` first—if the working tree version is already ahead of `HEAD`, do not bump again until committed). Skip version bumps on docs-only or read-only tasks.
@@ -25,7 +43,7 @@ Local-first Windows desktop torrent meta-search engine: Tauri v2 + Rust (`tokio`
 - **No DHT Crawler:** Never build a local BEP-51 crawler daemon; query external DHT indexes (e.g., BTDig, BT4G) instead.
 - **No Headless Browser:** HTML indexers use `reqwest` + `scraper`/`quick-xml` with configurable mirror fallback lists.
 - **Local-First:** Zero telemetry, analytics, or cloud accounts; cache, history, bookmarks, and config live only in local SQLite/disk.
-- **Rust Module Boundaries:** Keep backend modules strictly split into `indexers/`, `engine/`, `parser/`, `scraper/`, `storage/`, `commands/`; keep IPC payloads lean and strongly typed.
+- **Rust Module Boundaries:** Keep backend modules strictly split into `indexers/`, `engine/`, `parser/`, `scraper/`, `storage/`, `clients/`, `commands/`; keep IPC payloads lean and strongly typed.
 - **Streaming Fan-Out:** Run indexers concurrently via `tokio::JoinSet`, stream each batch over a Tauri `Channel` as it arrives, cancel superseded searches, enforce per-indexer timeouts (clearnet 4–6s, Tor 10–12s) and a circuit breaker; never block the UI on the slowest source.
 - **Proxy Routing:** Proxies are per-indexer (`socks5h://` for remote DNS, e.g., Tor at `127.0.0.1:9050`); never force clearnet indexers through Tor.
 - **InfoHash Normalization:** Normalize BTIH to lowercase 40-char hex (Base32 -> hex; handle v2/hybrid) before dedup, then merge trackers, file lists, and reporting indexers per hash.
@@ -33,6 +51,6 @@ Local-first Windows desktop torrent meta-search engine: Tauri v2 + Rust (`tokio`
 
 ## Done Criteria
 - Rust unit tests pass for every touched `engine`/`parser`/`indexers`/`scraper`/`storage` module; no mocked results anywhere.
-- Version bumped once and synced across every version manifest (list them in Architecture once the Phase 1 scaffold exists).
+- `npm run test:rust` and `npm run build` pass; `npm run check:version` shows all four Version Manifests in sync, bumped once per change set.
 
 <!-- brain-sync: fd4fe4022083 -->
