@@ -3,7 +3,8 @@
 //! Grammar (whitespace separated, order-independent):
 //! `term`, `"exact phrase"`, `-term`, `-"phrase"`, `file:<pattern>`, `cat:<category>`,
 //! `res:<1080p|4k|..>`, `codec:<hevc|x264|..>`, `src:<remux|web-dl|..>`, `seeds:>=N`,
-//! `size:>2gb` / `size:<50gb`, `site:<indexer>`, `source:<curated|dht|torznab>`.
+//! `size:>2gb` / `size:<50gb`, `site:<indexer>`, `source:<curated|dht|torznab>`,
+//! `by:<uploader|group|crew>` (aliases `uploader:`, `group:`).
 //! Unknown operators or invalid values fall back to plain terms, so nothing typed is lost.
 
 use serde::{Deserialize, Serialize};
@@ -69,6 +70,9 @@ pub struct SearchQuery {
     pub sites: Vec<String>,
     /// `source:`
     pub source_types: Vec<SourceType>,
+    /// `by:` uploader, release group or crew (any of them)
+    #[serde(default)]
+    pub by: Vec<String>,
 }
 
 const KB: f64 = 1024.0;
@@ -143,6 +147,7 @@ impl SearchQuery {
                 None => return false,
             },
             "site" => push_unique(&mut self.sites, v),
+            "by" | "uploader" | "group" => push_unique(&mut self.by, v),
             "source" => match SourceType::parse(&v) {
                 Some(s) => {
                     if !self.source_types.contains(&s) {
@@ -194,6 +199,7 @@ impl SearchQuery {
             out.push(format!("size:{}{}", cmp_str(s.cmp), format_size(s.value)));
         }
         out.extend(self.sites.iter().map(|s| quote_op("site", s)));
+        out.extend(self.by.iter().map(|b| quote_op("by", b)));
         for s in &self.source_types {
             let name = match s {
                 SourceType::Curated => "curated",
@@ -429,5 +435,14 @@ mod tests {
         let a = SearchQuery::parse("dune part res:1080p -cam");
         let b = SearchQuery::parse("part dune seeds:>5");
         assert_eq!(a.cache_key(), b.cache_key());
+    }
+
+    #[test]
+    fn by_filters_locally_and_round_trips() {
+        let q = SearchQuery::parse("fargo by:QxR uploader:Cybotage group:hhweb");
+        assert_eq!(q.by, vec!["qxr", "cybotage", "hhweb"]);
+        assert_eq!(q.indexer_text(), "fargo");
+        assert_eq!(q.cache_key(), SearchQuery::parse("fargo").cache_key());
+        assert_eq!(SearchQuery::parse(&q.to_dsl()), q);
     }
 }

@@ -10,6 +10,7 @@ import { Sidebar } from "./components/Sidebar";
 import { SettingsModal } from "./components/SettingsModal";
 import { useSearch } from "./hooks/useSearch";
 import { api } from "./lib/api";
+import { setOperator } from "./lib/dsl";
 import type { AppSettings, TorrentResult } from "./lib/types";
 
 const SHORTCUTS: [string, string][] = [
@@ -250,6 +251,7 @@ export default function App() {
             onBookmark={toggleBookmark}
             client={client?.name ?? null}
             onSend={send}
+            onBy={(name) => run(setOperator(text, "by", name))}
           />
         )}
         {toast && (

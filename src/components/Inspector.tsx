@@ -14,9 +14,11 @@ interface Props {
   /** Name of the default torrent client, if one is configured. */
   client: string | null;
   onSend: (r: TorrentResult) => void;
+  /** Filter the current search to an uploader or release group. */
+  onBy: (name: string) => void;
 }
 
-export function Inspector({ r, onClose, onOpen, onCopy, bookmarked, onBookmark, client, onSend }: Props) {
+export function Inspector({ r, onClose, onOpen, onCopy, bookmarked, onBookmark, client, onSend, onBy }: Props) {
   const seeds = seedersOf(r);
   const leech = leechersOf(r);
   const tags = [
@@ -113,7 +115,8 @@ export function Inspector({ r, onClose, onOpen, onCopy, bookmarked, onBookmark, 
           />
           {(r.live?.completed ?? r.completed) != null && <Stat label="Completed" value={formatCount(r.live?.completed ?? r.completed)} />}
           <Stat label="Uploaded" value={r.uploadedAt ? `${new Date(r.uploadedAt * 1000).toISOString().slice(0, 10)} · ${formatAge(r.uploadedAt)} ago` : "—"} />
-          {r.uploader && <Stat label="Uploader" value={`${r.uploader}${r.verifiedUploader ? " ✓" : ""}`} />}
+          {r.uploader && <Stat label="Uploader" value={<ByLink name={r.uploader} suffix={r.verifiedUploader ? " ✓" : ""} onBy={onBy} />} />}
+          {r.meta.group && <Stat label="Group" value={<ByLink name={r.meta.group} onBy={onBy} />} />}
           <Stat label="Category" value={r.category ?? "—"} />
           <Stat label="Score" value={r.score.toFixed(3)} />
           <dt className="text-faint">Infohash</dt>
@@ -149,6 +152,19 @@ export function Inspector({ r, onClose, onOpen, onCopy, bookmarked, onBookmark, 
         </Section>
       </div>
     </aside>
+  );
+}
+
+function ByLink({ name, suffix = "", onBy }: { name: string; suffix?: string; onBy: (name: string) => void }) {
+  return (
+    <button
+      onClick={() => onBy(name)}
+      title={`Show only releases by ${name}  (by:${name})`}
+      className="rounded-sm text-left transition-colors duration-150 hover:text-accent focus-visible:text-accent active:opacity-70"
+    >
+      {name}
+      {suffix}
+    </button>
   );
 }
 

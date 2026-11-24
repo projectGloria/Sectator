@@ -304,13 +304,17 @@ pub fn parse(title: &str) -> ParsedMeta {
     m
 }
 
-fn parse_group(title: &str) -> Option<String> {
+/// Release group from a raw title (scene suffix, anime prefix or trailing encoder).
+pub fn parse_group(title: &str) -> Option<String> {
     if let Some(c) = ANIME_GROUP.captures(title) {
         let g = c[1].trim();
         // A leading "[1080p]" or "[2024]" is a tag, not a group.
         if canon_resolution(g).is_none() && !g.chars().all(|c| c.is_ascii_digit()) {
             return Some(g.to_string());
         }
+    }
+    if let Some(g) = paren_encoder(title) {
+        return Some(g);
     }
     let stripped = TRAILING_TAGS.replace(title.trim(), "");
     let c = SCENE_GROUP.captures(stripped.trim_end())?;
@@ -320,6 +324,33 @@ fn parse_group(title: &str) -> Option<String> {
     }
     Some(g.to_string())
 }
+
+/// Encoder named at the end of a trailing spec block, as in
+/// `Show S01 (1080p BluRay x265 HEVC 10bit AAC 5.1 Tigole) [QxR]`.
+fn paren_encoder(title: &str) -> Option<String> {
+    let t = BRACKET_SUFFIX.replace(title.trim(), "");
+    let c = PAREN_SPEC.captures(t.trim_end())?;
+    let words: Vec<&str> = c[1].split_whitespace().collect();
+    if words.len() < 3 || !words.iter().any(|w| canon_resolution(w).is_some()) {
+        return None;
+    }
+    let last = *words.last()?;
+    let lower = last.to_ascii_lowercase();
+    let is_tag = canon_resolution(last).is_some()
+        || canon_codec(last).is_some()
+        || canon_source(last).is_some()
+        || NOT_GROUPS.contains(&lower.as_str())
+        || PAREN_NOT_GROUPS.contains(&lower.as_str());
+    let shaped = last.len() >= 2 && last.len() <= 24 && last.chars().all(|c| c.is_ascii_alphanumeric()) && last.chars().any(|c| c.is_ascii_alphabetic());
+    (shaped && !is_tag).then(|| last.to_string())
+}
+
+static PAREN_SPEC: Lazy<Regex> = Lazy::new(|| Regex::new(r"\(([^()]{6,120})\)$").expect("valid regex"));
+static BRACKET_SUFFIX: Lazy<Regex> = Lazy::new(|| Regex::new(r"(\s*\[[^\]]*\])+\s*$").expect("valid regex"));
+/// Audio / video tags that can end a spec block without being an encoder.
+const PAREN_NOT_GROUPS: &[&str] = &[
+    "eac3", "ddp", "dd", "opus", "flac", "truehd", "mp3", "10bit", "8bit", "sdr", "dovi", "hybrid", "mono", "stereo", "ita", "eng",
+];
 
 /// Best-effort category when the indexer did not report one.
 pub fn infer_category(meta: &ParsedMeta) -> Option<Category> {
@@ -437,6 +468,17 @@ mod tests {
         let b = parse("Clean Code - Robert Martin (epub, pdf)");
         assert_eq!(b.format, vec!["EPUB", "PDF"]);
         assert_eq!(infer_category(&b), Some(Category::Books));
+    }
+
+    #[test]
+    fn encoder_at_end_of_spec_block_is_the_group() {
+        assert_eq!(parse("Fargo (2014) Season 5 S05 (1080p AMZN WEB-DL x265 HEVC 10bit EAC3 5.1 Silence)").group.as_deref(), Some("Silence"));
+        assert_eq!(parse("Fargo (1996) RM4K (1080p BluRay x265 HEVC 10bit AAC 5.1 Tigole) [QxR]").group.as_deref(), Some("Tigole"));
+        // Truncated titles and spec blocks ending in a tag carry no encoder.
+        assert_eq!(parse("Fargo (2014) Season 3 S03 (1080p AMZN WEB-DL x265 HEVC 10bit AAC").group, None);
+        assert_eq!(parse("Movie (2020) (1080p BluRay x265 10bit AAC 5.1)").group, None);
+        assert_eq!(parse("Movie (2020) (1080p BluRay x265 HEVC 10bit EAC3)").group, None);
+        assert_eq!(parse("Fargo (1996)").group, None);
     }
 
     #[test]

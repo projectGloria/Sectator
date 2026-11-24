@@ -1,7 +1,7 @@
 // Display-side tokenizer for the search bar's operator pills. The authoritative
 // parse happens in Rust (parser/query.rs); this only splits text for chips.
 
-export const OPERATORS = ["file", "cat", "res", "codec", "src", "seeds", "size", "site", "source"] as const;
+export const OPERATORS = ["file", "cat", "res", "codec", "src", "seeds", "size", "site", "source", "by"] as const;
 export type Operator = (typeof OPERATORS)[number];
 
 export interface Token {

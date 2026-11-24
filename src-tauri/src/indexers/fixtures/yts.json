@@ -1,0 +1,129 @@
+{
+ "status": "ok",
+ "status_message": "Query was successful",
+ "data": {
+  "movie_count": 2,
+  "limit": 50,
+  "page_number": 1,
+  "movies": [
+   {
+    "id": 1130,
+    "url": "https://yts.pw/movies/fargo-1996",
+    "imdb_code": "tt0116282",
+    "title": "Fargo",
+    "title_english": "Fargo",
+    "title_long": "Fargo (1996)",
+    "slug": "fargo-1996",
+    "year": 1996,
+    "rating": 8.1,
+    "runtime": 98,
+    "genres": [
+     "Action",
+     "Crime",
+     "Drama",
+     "Thriller"
+    ],
+    "summary": "A car salesman's inept crime falls apart due to his and his henchmen's bungling and the persistent police work of a dogged detective.",
+    "description_full": "A car salesman's inept crime falls apart due to his and his henchmen's bungling and the persistent police work of a dogged detective.",
+    "synopsis": "A car salesman's inept crime falls apart due to his and his henchmen's bungling and the persistent police work of a dogged detective.",
+    "yt_trailer_code": "Y4h7NITkNG0",
+    "language": "en",
+    "mpa_rating": "TV-14",
+    "background_image": "https://yts.pw/assets/images/movies/Fargo_1996/background.jpg",
+    "background_image_original": "https://yts.pw/assets/images/movies/Fargo_1996/background.jpg",
+    "small_cover_image": "https://yts.pw/assets/images/movies/Fargo_1996/small-cover.jpg",
+    "medium_cover_image": "https://yts.pw/assets/images/movies/Fargo_1996/medium-cover.jpg",
+    "large_cover_image": "https://yts.pw/assets/images/movies/Fargo_1996/large-cover.jpg",
+    "state": "ok",
+    "torrents": [
+     {
+      "url": "https://yts.pw/torrent/download/F8EB73B504244F9833F453D9313A46EBA9615415",
+      "hash": "F8EB73B504244F9833F453D9313A46EBA9615415",
+      "quality": "720p",
+      "type": "bluray",
+      "is_repack": "0",
+      "video_codec": "x264",
+      "bit_depth": "8",
+      "audio_channels": "2.0",
+      "seeds": 6,
+      "peers": 2,
+      "size": "395.66 MB",
+      "size_bytes": 414879580,
+      "date_uploaded": "2015-10-31 23:22:48",
+      "date_uploaded_unix": 1446330168
+     },
+     {
+      "url": "https://yts.pw/torrent/download/F49AB332E3392A8AAD867E2576E9B89A87EB9969",
+      "hash": "F49AB332E3392A8AAD867E2576E9B89A87EB9969",
+      "quality": "720p",
+      "type": "bluray",
+      "is_repack": "0",
+      "video_codec": "x264",
+      "bit_depth": "8",
+      "audio_channels": "2.0",
+      "seeds": 18,
+      "peers": 2,
+      "size": "904.7 MB",
+      "size_bytes": 948646707,
+      "date_uploaded": "2023-11-04 02:22:45",
+      "date_uploaded_unix": 1699060965
+     },
+     {
+      "url": "https://yts.pw/torrent/download/01D9D1B96EFF15FB5439330B02215C6C27F4153D",
+      "hash": "01D9D1B96EFF15FB5439330B02215C6C27F4153D",
+      "quality": "1080p",
+      "type": "bluray",
+      "is_repack": "0",
+      "video_codec": "x264",
+      "bit_depth": "8",
+      "audio_channels": "2.0",
+      "seeds": 100,
+      "peers": 27,
+      "size": "1.44 GB",
+      "size_bytes": 1546188227,
+      "date_uploaded": "2015-10-31 23:22:50",
+      "date_uploaded_unix": 1446330170
+     },
+     {
+      "url": "https://yts.pw/torrent/download/BFB2230D20E857666E228FDC50EAB57CFA6277B8",
+      "hash": "BFB2230D20E857666E228FDC50EAB57CFA6277B8",
+      "quality": "1080p",
+      "type": "bluray",
+      "is_repack": "0",
+      "video_codec": "x264",
+      "bit_depth": "8",
+      "audio_channels": "5.1",
+      "seeds": 52,
+      "peers": 9,
+      "size": "1.81 GB",
+      "size_bytes": 1943472701,
+      "date_uploaded": "2023-11-04 03:38:13",
+      "date_uploaded_unix": 1699065493
+     },
+     {
+      "url": "https://yts.pw/torrent/download/967D3AB2AB142834AA12A009ECA3B80B30A19CD0",
+      "hash": "967D3AB2AB142834AA12A009ECA3B80B30A19CD0",
+      "quality": "2160p",
+      "type": "web",
+      "is_repack": "0",
+      "video_codec": "x265",
+      "bit_depth": "10",
+      "audio_channels": "5.1",
+      "seeds": 56,
+      "peers": 20,
+      "size": "4.37 GB",
+      "size_bytes": 4692251771,
+      "date_uploaded": "2023-03-30 13:32:13",
+      "date_uploaded_unix": 1680175933
+     }
+    ],
+    "date_uploaded": "2023-11-04 02:22:45",
+    "date_uploaded_unix": 1699060965
+   }
+  ]
+ },
+ "@meta": {
+  "api_version": 2,
+  "execution_time": "0 ms"
+ }
+}

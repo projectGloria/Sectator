@@ -1,15 +1,18 @@
 //! Indexer trait, per-indexer configuration, and the built-in adapters.
 
 pub mod apibay;
+pub mod bitsearch;
 pub mod bt4g;
 pub mod btdig;
 pub mod http;
 pub mod knaben;
+pub mod limetorrents;
 pub mod nyaa;
 pub mod registry;
 pub mod rss;
 pub mod text;
 pub mod torznab;
+pub mod yts;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -37,7 +40,7 @@ pub enum ProxyOverride {
 pub struct IndexerConfig {
     pub id: String,
     pub name: String,
-    /// Adapter kind, e.g. `apibay`, `nyaa`, `knaben`, `bt4g`, `btdig`, `torznab`.
+    /// Adapter kind, e.g. `apibay`, `nyaa`, `knaben`, `bt4g`, `btdig`, `bitsearch`, `limetorrents`, `yts`, `torznab`.
     pub kind: String,
     pub enabled: bool,
     /// Mirrors tried in order; the first healthy one wins.

@@ -2,9 +2,9 @@
 
 use std::sync::Arc;
 
-use super::{apibay, bt4g, btdig, knaben, nyaa, torznab, Indexer, IndexerConfig, IndexerError, ProxyOverride};
+use super::{apibay, bitsearch, bt4g, btdig, knaben, limetorrents, nyaa, torznab, yts, Indexer, IndexerConfig, IndexerError, ProxyOverride};
 
-pub const KINDS: [&str; 6] = ["apibay", "nyaa", "knaben", "bt4g", "btdig", "torznab"];
+pub const KINDS: [&str; 9] = ["apibay", "nyaa", "knaben", "bt4g", "btdig", "bitsearch", "limetorrents", "yts", "torznab"];
 
 pub fn build(cfg: &IndexerConfig) -> Result<Arc<dyn Indexer>, IndexerError> {
     if cfg.base_urls.iter().all(|u| u.trim().is_empty()) {
@@ -16,6 +16,9 @@ pub fn build(cfg: &IndexerConfig) -> Result<Arc<dyn Indexer>, IndexerError> {
         "knaben" => Arc::new(knaben::Knaben::new(cfg)),
         "bt4g" => Arc::new(bt4g::Bt4g::new(cfg)),
         "btdig" => Arc::new(btdig::BtDig::new(cfg)),
+        "bitsearch" => Arc::new(bitsearch::Bitsearch::new(cfg)),
+        "limetorrents" => Arc::new(limetorrents::LimeTorrents::new(cfg)),
+        "yts" => Arc::new(yts::Yts::new(cfg)),
         "torznab" => Arc::new(torznab::Torznab::new(cfg)),
         other => return Err(IndexerError::Config(format!("unknown indexer kind `{other}`"))),
     })
@@ -38,6 +41,9 @@ fn cfg(id: &str, name: &str, kind: &str, enabled: bool, urls: &[&str]) -> Indexe
 pub fn default_configs() -> Vec<IndexerConfig> {
     let mut tor = cfg("btdig-tor", "BTDig (Tor)", "btdig", false, &[btdig::ONION]);
     tor.proxy = ProxyOverride::Custom("socks5h://127.0.0.1:9050".into());
+    // LimeTorrents is reachable but slow (~7s per search), so it gets its own budget.
+    let mut lime = cfg("limetorrents", "LimeTorrents", "limetorrents", true, &["https://www.limetorrents.fun", "https://www.limetorrents.lol"]);
+    lime.timeout_ms = Some(10_000);
     let mut prowlarr = cfg("prowlarr", "Prowlarr (Torznab)", "torznab", false, &["http://127.0.0.1:9696/1"]);
     prowlarr.proxy = ProxyOverride::Direct;
     vec![
@@ -46,6 +52,9 @@ pub fn default_configs() -> Vec<IndexerConfig> {
         cfg("knaben", "Knaben", "knaben", true, &["https://api.knaben.org/v1"]),
         cfg("bt4g", "BT4G", "bt4g", true, &["https://bt4gprx.com"]),
         cfg("btdig", "BTDig", "btdig", true, &["https://btdig.com"]),
+        cfg("bitsearch", "Bitsearch", "bitsearch", true, &["https://bitsearch.to", "https://bitsearch.eu"]),
+        lime,
+        cfg("yts", "YTS", "yts", true, &["https://movies-api.accel.li", "https://yts.pw"]),
         tor,
         prowlarr,
     ]

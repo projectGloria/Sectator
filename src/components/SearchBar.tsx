@@ -21,6 +21,7 @@ const OP_COLOR: Record<string, string> = {
   site: "text-warn",
   source: "text-warn",
   file: "text-[#60a5fa]",
+  by: "text-[#f472b6]",
 };
 
 export const SearchBar = forwardRef<HTMLInputElement, Props>(function SearchBar({ value, busy, onChange, onSubmit, onCancel }, ref) {
