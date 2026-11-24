@@ -1,6 +1,7 @@
 //! Torrent-client integrations: push a magnet straight into qBittorrent or
 //! Transmission over their local Web APIs instead of the OS magnet handler.
 
+pub mod download;
 pub mod qbittorrent;
 pub mod transmission;
 

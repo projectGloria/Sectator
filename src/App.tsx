@@ -5,17 +5,20 @@ import { Titlebar } from "./components/Titlebar";
 import { SearchBar } from "./components/SearchBar";
 import { ResultsTable, sortResults, type Sort } from "./components/ResultsTable";
 import { Inspector } from "./components/Inspector";
+import { Downloads } from "./components/Downloads";
 import { StatusBar } from "./components/StatusBar";
 import { Sidebar } from "./components/Sidebar";
 import { SettingsModal } from "./components/SettingsModal";
 import { useSearch } from "./hooks/useSearch";
 import { api } from "./lib/api";
 import { setOperator } from "./lib/dsl";
-import type { AppSettings, TorrentResult } from "./lib/types";
+import type { AppSettings, Download, TorrentResult } from "./lib/types";
 
 const SHORTCUTS: [string, string][] = [
   ["Ctrl K  /", "Focus search"],
   ["Enter", "Search · open magnet"],
+  ["D", "Download with Sectator"],
+  ["Ctrl J", "Downloads"],
   ["↑ ↓  J K", "Move selection"],
   ["Ctrl C", "Copy magnet"],
   ["I", "Toggle inspector"],
@@ -37,6 +40,8 @@ export default function App() {
   const [sidebar, setSidebar] = useState(false);
   const [bookmarks, setBookmarks] = useState<Set<string>>(new Set());
   const [libKey, setLibKey] = useState(0);
+  const [view, setView] = useState<"results" | "downloads">("results");
+  const [downloads, setDownloads] = useState<Download[]>([]);
   const input = useRef<HTMLInputElement>(null);
   const { state, search, cancel } = useSearch();
   const busy = state.phase === "searching" || state.phase === "scraping";
@@ -51,6 +56,17 @@ export default function App() {
   useEffect(() => {
     if (state.phase === "done" || state.phase === "cancelled") setLibKey((k) => k + 1);
   }, [state.phase]);
+
+  // The engine starts lazily, so listing is free until something has been downloaded.
+  const refreshDownloads = useCallback(() => {
+    api.downloads().then(setDownloads, () => {});
+  }, []);
+  useEffect(() => {
+    refreshDownloads();
+    const t = window.setInterval(refreshDownloads, view === "downloads" ? 1000 : 3000);
+    return () => window.clearInterval(t);
+  }, [refreshDownloads, view]);
+  const activeDownloads = downloads.filter((d) => d.state === "downloading" || d.state === "metadata" || d.state === "checking").length;
 
   const client = useMemo(() => settings?.clients.find((c) => c.id === settings.defaultClient) ?? null, [settings]);
 
@@ -83,6 +99,19 @@ export default function App() {
   );
   const open = useCallback((r: TorrentResult) => openMagnet(r.magnet), [openMagnet]);
 
+  const download = useCallback(
+    (r: TorrentResult) => {
+      api.download(r.magnet).then(
+        () => {
+          refreshDownloads();
+          notify("Downloading — Ctrl+J shows progress");
+        },
+        (e) => notify(`Couldn't start download: ${e}`),
+      );
+    },
+    [notify, refreshDownloads],
+  );
+
   const send = useCallback(
     (r: TorrentResult) => {
       if (!client) return;
@@ -114,6 +143,7 @@ export default function App() {
   const submit = useCallback(
     (q: string, force = false) => {
       setSelected(null);
+      setView("results");
       search(q, force);
     },
     [search],
@@ -141,6 +171,11 @@ export default function App() {
         setSidebar((v) => !v);
         return;
       }
+      if (e.ctrlKey && key === "j") {
+        e.preventDefault();
+        setView((v) => (v === "downloads" ? "results" : "downloads"));
+        return;
+      }
       if (e.ctrlKey && e.key === ",") {
         e.preventDefault();
         setSettingsOpen(true);
@@ -151,6 +186,10 @@ export default function App() {
         e.preventDefault();
         input.current?.focus();
         input.current?.select();
+        return;
+      }
+      if (view === "downloads") {
+        if (!typing && e.key === "Escape") setView("results");
         return;
       }
       if (typing) {
@@ -193,6 +232,9 @@ export default function App() {
         case "i":
           setInspector((v) => !v);
           break;
+        case "d":
+          if (current && !e.ctrlKey && !e.altKey) download(current);
+          break;
         case "Escape":
           if (busy) cancel();
           else setSelected(null);
@@ -207,7 +249,7 @@ export default function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [rows, selected, current, busy, cancel, open, copy, settingsOpen, text, submit]);
+  }, [rows, selected, current, busy, cancel, open, copy, settingsOpen, text, submit, view, download]);
 
   const empty = (
     <div className="chrome flex h-full flex-col items-center justify-center gap-4 text-dim">
@@ -236,16 +278,28 @@ export default function App() {
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden">
-      <Titlebar version={version} onSidebar={() => setSidebar((v) => !v)} onSettings={() => setSettingsOpen(true)} />
+      <Titlebar
+        version={version}
+        onSidebar={() => setSidebar((v) => !v)}
+        onSettings={() => setSettingsOpen(true)}
+        downloads={view === "downloads"}
+        active={activeDownloads}
+        onDownloads={() => setView((v) => (v === "downloads" ? "results" : "downloads"))}
+      />
       <SearchBar ref={input} value={text} busy={busy} onChange={setText} onSubmit={submit} onCancel={cancel} />
       <div className="relative flex min-h-0 flex-1">
         {sidebar && <Sidebar refreshKey={libKey} query={text} onRun={run} onOpenMagnet={openMagnet} onNotify={notify} onClose={() => setSidebar(false)} />}
-        <ResultsTable rows={rows} selected={selected} sort={sort} onSort={setSort} onSelect={setSelected} onActivate={open} empty={empty} />
-        {inspector && current && (
+        {view === "downloads" ? (
+          <Downloads items={downloads} onChanged={refreshDownloads} onNotify={notify} />
+        ) : (
+          <ResultsTable rows={rows} selected={selected} sort={sort} onSort={setSort} onSelect={setSelected} onActivate={open} empty={empty} />
+        )}
+        {view === "results" && inspector && current && (
           <Inspector
             r={current}
             onClose={() => setInspector(false)}
             onOpen={open}
+            onDownload={download}
             onCopy={copy}
             bookmarked={bookmarks.has(current.infoHash)}
             onBookmark={toggleBookmark}

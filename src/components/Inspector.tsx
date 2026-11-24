@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { AlertTriangle, Bookmark, BookmarkCheck, ChevronDown, ChevronRight, Copy, File, Folder, Magnet, Radio, Send, X } from "lucide-react";
+import { AlertTriangle, Bookmark, BookmarkCheck, ChevronDown, ChevronRight, Copy, Download, File, Folder, Magnet, Radio, Send, X } from "lucide-react";
 import { FLAG_LABEL, formatAge, formatCount, formatSize } from "../lib/format";
 import { leechersOf, seedersOf, type TorrentFile, type TorrentResult } from "../lib/types";
 import { KIND_DOT } from "./ResultsTable";
@@ -8,6 +8,8 @@ interface Props {
   r: TorrentResult;
   onClose: () => void;
   onOpen: (r: TorrentResult) => void;
+  /** Download with the built-in libtorrent engine. */
+  onDownload: (r: TorrentResult) => void;
   onCopy: (text: string, what: string) => void;
   bookmarked: boolean;
   onBookmark: (r: TorrentResult) => void;
@@ -18,7 +20,7 @@ interface Props {
   onBy: (name: string) => void;
 }
 
-export function Inspector({ r, onClose, onOpen, onCopy, bookmarked, onBookmark, client, onSend, onBy }: Props) {
+export function Inspector({ r, onClose, onOpen, onDownload, onCopy, bookmarked, onBookmark, client, onSend, onBy }: Props) {
   const seeds = seedersOf(r);
   const leech = leechersOf(r);
   const tags = [
@@ -59,10 +61,19 @@ export function Inspector({ r, onClose, onOpen, onCopy, bookmarked, onBookmark, 
 
         <div className="mt-3 flex gap-2">
           <button
-            onClick={() => onOpen(r)}
-            className="chrome flex h-8 flex-1 items-center justify-center gap-1.5 rounded-md bg-accent text-[12px] font-medium text-bg transition-colors duration-150 hover:bg-[#4fe0f5] active:bg-[#1bb8d1]"
+            onClick={() => onDownload(r)}
+            title="Download with Sectator (D)"
+            className="chrome flex h-8 flex-1 items-center justify-center gap-1.5 rounded-md bg-accent text-[12px] font-medium text-bg transition-colors duration-150 hover:bg-[#4fe0f5] focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-accent active:bg-[#1bb8d1]"
           >
-            <Magnet size={13} /> Open magnet
+            <Download size={13} /> Download
+          </button>
+          <button
+            onClick={() => onOpen(r)}
+            aria-label="Open magnet in the system torrent handler"
+            title="Open magnet in the system torrent handler (Enter)"
+            className="chrome flex h-8 w-8 items-center justify-center rounded-md border border-line text-dim transition-colors duration-150 hover:border-[#2e333d] hover:text-fg active:bg-raised"
+          >
+            <Magnet size={13} />
           </button>
           <button
             onClick={() => onCopy(r.magnet, "Magnet link")}

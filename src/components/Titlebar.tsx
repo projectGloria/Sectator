@@ -1,9 +1,25 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { Minus, PanelLeft, Settings, Square, X } from "lucide-react";
+import { Download, Minus, PanelLeft, Settings, Square, X } from "lucide-react";
 
 const win = getCurrentWindow();
 
-export function Titlebar({ version, onSidebar, onSettings }: { version?: string; onSidebar: () => void; onSettings: () => void }) {
+export function Titlebar({
+  version,
+  onSidebar,
+  onSettings,
+  downloads,
+  active,
+  onDownloads,
+}: {
+  version?: string;
+  onSidebar: () => void;
+  onSettings: () => void;
+  /** Whether the downloads view is showing. */
+  downloads: boolean;
+  /** Downloads currently transferring, shown as a badge. */
+  active: number;
+  onDownloads: () => void;
+}) {
   return (
     <div
       data-tauri-drag-region
@@ -21,6 +37,14 @@ export function Titlebar({ version, onSidebar, onSettings }: { version?: string;
       <div className="ml-auto flex h-full">
         <TitleButton label="History, presets and bookmarks (Ctrl+B)" onClick={onSidebar}>
           <PanelLeft size={13} />
+        </TitleButton>
+        <TitleButton label={downloads ? "Back to results (Ctrl+J)" : "Downloads (Ctrl+J)"} pressed={downloads} onClick={onDownloads}>
+          <span className="relative">
+            <Download size={13} />
+            {active > 0 && (
+              <span className="num absolute -right-2 -top-1.5 min-w-[13px] rounded-full bg-accent px-[3px] text-center text-[9px] font-semibold leading-[13px] text-bg">{active > 99 ? "99+" : active}</span>
+            )}
+          </span>
         </TitleButton>
         <TitleButton label="Settings (Ctrl+,)" onClick={onSettings}>
           <Settings size={13} />
@@ -40,14 +64,15 @@ export function Titlebar({ version, onSidebar, onSettings }: { version?: string;
   );
 }
 
-function TitleButton(props: { label: string; danger?: boolean; onClick: () => void; children: React.ReactNode }) {
+function TitleButton(props: { label: string; danger?: boolean; pressed?: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
     <button
       aria-label={props.label}
       title={props.label}
+      aria-pressed={props.pressed}
       onClick={props.onClick}
       onDoubleClick={(e) => e.stopPropagation()}
-      className={`flex h-full w-11 items-center justify-center text-dim transition-colors duration-150 hover:text-fg ${
+      className={`flex h-full w-11 items-center justify-center transition-colors duration-150 hover:text-fg ${props.pressed ? "text-accent" : "text-dim"} ${
         props.danger ? "hover:bg-[#c42b1c] active:bg-[#a52314]" : "hover:bg-raised active:bg-line"
       }`}
     >

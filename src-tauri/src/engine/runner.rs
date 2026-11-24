@@ -605,6 +605,37 @@ mod tests {
         assert!(matches!(ev.last(), Some(SearchEvent::Done { origin: Origin::Offline, total, .. }) if *total > 0));
     }
 
+    /// Live: `by:` finds TPB titles cut short before their encoder. `cargo test -- --ignored live_`.
+    #[tokio::test]
+    #[ignore]
+    async fn live_by_crew_finds_cut_off_titles() {
+        // TPB cuts QxR season packs at 64 characters, losing the encoder; their file
+        // lists still carry it, so `by:qxr` should find them anyway.
+        let ixs: Vec<Arc<dyn Indexer>> = crate::indexers::registry::default_configs()
+            .iter()
+            .filter(|c| c.enabled && c.id == "apibay")
+            .filter_map(|c| crate::indexers::registry::build(c).ok())
+            .collect();
+        assert_eq!(ixs.len(), 1, "the TPB indexer is a default");
+        let engine = Engine::new(ixs, EngineConfig::default());
+        let (sink, events) = collector();
+        engine.search("fargo by:qxr", sink).await;
+        let mut found: Vec<(String, Option<String>)> = Vec::new();
+        for e in events.lock().unwrap().iter() {
+            if let SearchEvent::Results { results, .. } = e {
+                for r in results {
+                    if !found.iter().any(|(t, _)| *t == r.title) {
+                        found.push((r.title.clone(), r.meta.group.clone()));
+                    }
+                }
+            }
+        }
+        for (t, g) in &found {
+            eprintln!("{g:?}  {t}");
+        }
+        assert!(found.iter().any(|(t, _)| crate::parser::release::looks_truncated(t)), "a cut-off title matched through its files");
+    }
+
     /// Live network smoke test against the default indexer set: `cargo test -- --ignored live_`.
     #[tokio::test]
     #[ignore]

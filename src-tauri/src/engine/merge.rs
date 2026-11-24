@@ -131,6 +131,7 @@ impl Merger {
                     flags: Vec::new(),
                     file_match: false,
                 };
+                fill_group(&mut r);
                 r.magnet = magnet_for(&r);
                 self.entries.insert(hash.clone(), Entry { result: r, title_trust: trust });
                 self.order.push(hash.clone());
@@ -172,10 +173,18 @@ impl Merger {
                     Some(s) => *s = source,
                     None => r.sources.push(source),
                 }
+                fill_group(r);
                 r.magnet = magnet_for(r);
             }
         }
         Some(hash)
+    }
+}
+
+/// Cut-off titles lose their group; recover it from the file names when we have them.
+fn fill_group(r: &mut TorrentResult) {
+    if r.meta.group.is_none() {
+        r.meta.group = release::group_for(&r.title, &r.files);
     }
 }
 

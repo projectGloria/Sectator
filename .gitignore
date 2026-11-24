@@ -3,3 +3,6 @@ dist/
 src-tauri/target/
 src-tauri/gen/
 *.log
+
+# vcpkg manifest install (libtorrent, Boost, OpenSSL)
+src-tauri/vcpkg_installed/

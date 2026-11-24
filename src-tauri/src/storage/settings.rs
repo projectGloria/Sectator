@@ -5,6 +5,7 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 use super::{Result, Store};
+use crate::clients::download::DownloadSettings;
 use crate::clients::ClientConfig;
 use crate::indexers::{registry, IndexerConfig, NetworkSettings};
 
@@ -22,6 +23,8 @@ pub struct AppSettings {
     pub clients: Vec<ClientConfig>,
     /// Id of the client "Send to client" uses; `None` means the OS magnet handler.
     pub default_client: Option<String>,
+    /// Built-in downloader (libtorrent).
+    pub download: DownloadSettings,
 }
 
 impl Default for AppSettings {
@@ -33,6 +36,7 @@ impl Default for AppSettings {
             scrape_top: 60,
             clients: Vec::new(),
             default_client: None,
+            download: DownloadSettings::default(),
         }
     }
 }
@@ -56,6 +60,7 @@ impl AppSettings {
         self.net.tor_timeout_ms = self.net.tor_timeout_ms.clamp(2_000, 60_000);
         self.net.proxy = self.net.proxy.take().map(|p| p.trim().to_string()).filter(|p| !p.is_empty());
         self.net.doh_url = self.net.doh_url.take().map(|p| p.trim().to_string()).filter(|p| !p.is_empty());
+        self.download = self.download.sanitized();
         if self.default_client.as_ref().is_some_and(|id| !self.clients.iter().any(|c| &c.id == id)) {
             self.default_client = None;
         }

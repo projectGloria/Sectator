@@ -1,11 +1,14 @@
 //! The Pirate Bay via its JSON API (`apibay.org/q.php`). Curated.
 
+use std::time::Duration;
+
 use async_trait::async_trait;
 use serde::Deserialize;
 use tokio_util::sync::CancellationToken;
 
 use super::{http, text, Indexer, IndexerConfig, IndexerError, IndexerMeta, SearchContext};
-use crate::models::{Category, IndexerHit, SourceType};
+use crate::models::{Category, IndexerHit, SourceType, TorrentFile};
+use crate::parser::release;
 use crate::parser::query::SearchQuery;
 
 pub struct ApiBay {
@@ -102,6 +105,52 @@ pub fn parse(body: &str) -> Result<Vec<IndexerHit>, IndexerError> {
         .collect())
 }
 
+/// At most this many cut-off titles get their file list fetched per search.
+const MAX_FILE_LOOKUPS: usize = 12;
+const FILE_LOOKUP_TIMEOUT: Duration = Duration::from_secs(2);
+
+/// `f.php` answers `[{"name":["a.mkv"],"size":[123]}, …]`, or a single
+/// `Filelist not found` row with size 0.
+#[derive(Deserialize)]
+struct FileRow {
+    #[serde(default)]
+    name: Vec<String>,
+    #[serde(default)]
+    size: Vec<u64>,
+}
+
+pub fn parse_files(body: &str) -> Vec<TorrentFile> {
+    serde_json::from_str::<Vec<FileRow>>(body)
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|r| {
+            let path = text::html_unescape(r.name.first()?.trim());
+            let size = r.size.first().copied().unwrap_or(0);
+            (size > 0 && !path.is_empty()).then_some(TorrentFile { path, size })
+        })
+        .collect()
+}
+
+fn torrent_id(h: &IndexerHit) -> Option<String> {
+    let id = h.details_url.as_deref()?.rsplit_once("id=")?.1;
+    (!id.is_empty() && id.bytes().all(|b| b.is_ascii_digit())).then(|| id.to_string())
+}
+
+/// TPB cuts names at 64 characters, dropping the encoder that QxR-style releases put
+/// last. Their file names still carry it, so fetch file lists for those hits only.
+/// Best effort: any failure just leaves the hit without files.
+async fn fill_cut_titles(client: &reqwest::Client, base: &str, hits: &mut [IndexerHit]) {
+    let mut set = tokio::task::JoinSet::new();
+    for (i, h) in hits.iter().enumerate().filter(|(_, h)| release::looks_truncated(&h.title)).take(MAX_FILE_LOOKUPS) {
+        let Some(id) = torrent_id(h) else { continue };
+        let req = client.get(format!("{}/f.php?id={id}", text::base(base))).timeout(FILE_LOOKUP_TIMEOUT);
+        set.spawn(async move { (i, http::fetch_text(req).await.map(|b| parse_files(&b)).unwrap_or_default()) });
+    }
+    while let Some(Ok((i, files))) = set.join_next().await {
+        hits[i].files = files;
+    }
+}
+
 #[async_trait]
 impl Indexer for ApiBay {
     fn meta(&self) -> &IndexerMeta {
@@ -116,7 +165,12 @@ impl Indexer for ApiBay {
         http::with_mirrors(&self.meta.base_urls, cancel, |base| {
             let url = format!("{}/q.php?q={}&cat={}", text::base(&base), text::enc(&terms), cat_param(q.category));
             let req = ctx.client.get(url);
-            async move { parse(&http::fetch_text(req).await?) }
+            let client = ctx.client.clone();
+            async move {
+                let mut hits = parse(&http::fetch_text(req).await?)?;
+                fill_cut_titles(&client, &base, &mut hits).await;
+                Ok(hits)
+            }
         })
         .await
     }
@@ -149,6 +203,19 @@ mod tests {
     fn no_results_placeholder_is_dropped() {
         assert!(parse(include_str!("fixtures/apibay_empty.json")).unwrap().is_empty());
         assert!(parse("<html>blocked</html>").is_err());
+    }
+
+    #[test]
+    fn file_lists_and_ids() {
+        let body = r#"[{"name":["Fargo (2014) - S02E08 - Loplop (1080p x265 Silence).mkv"],"size":[2297377977]},{"name":["Fargo (2014) - S02E02 - Before the Law (1080p x265 Silence).mkv"],"size":[2256537229]}]"#;
+        let files = parse_files(body);
+        assert_eq!(files.len(), 2);
+        assert_eq!(files[0].size, 2_297_377_977);
+        assert_eq!(release::group_from_files(&files).as_deref(), Some("Silence"));
+        assert!(parse_files(r#"[{"name":["Filelist not found"],"size":[0]}]"#).is_empty());
+        assert!(parse_files("<html>429</html>").is_empty());
+        let hits = parse(include_str!("fixtures/apibay.json")).unwrap();
+        assert_eq!(torrent_id(&hits[0]).as_deref(), Some("81462446"));
     }
 
     #[test]

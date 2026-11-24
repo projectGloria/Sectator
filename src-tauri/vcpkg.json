@@ -1,0 +1,12 @@
+{
+  "$comment": "Native dependencies for the built-in downloader. Pinned to a vcpkg commit; built as x64-windows-static-md so libtorrent links into sectator.exe.",
+  "name": "sectator-native",
+  "version-string": "0",
+  "builtin-baseline": "0bd8ac74569dd08d776848b1b1a76b72de2f93b3",
+  "dependencies": [
+    {
+      "name": "libtorrent",
+      "default-features": false
+    }
+  ]
+}

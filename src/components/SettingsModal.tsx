@@ -5,7 +5,7 @@ import { formatAge } from "../lib/format";
 import type { AppSettings, ClientConfig, ClientKind, IndexerConfig, IndexerHealth, ProxyOverride } from "../lib/types";
 import { Button, Field, NumberInput, Segmented, TextInput, Toggle } from "./ui";
 
-type Tab = "indexers" | "network" | "clients" | "cache";
+type Tab = "indexers" | "network" | "downloads" | "clients" | "cache";
 
 interface Props {
   initial: AppSettings;
@@ -57,6 +57,7 @@ export function SettingsModal({ initial, onSaved, onClose, onNotify }: Props) {
               options={[
                 ["indexers", "Indexers"],
                 ["network", "Network"],
+                ["downloads", "Downloads"],
                 ["clients", "Torrent clients"],
                 ["cache", "Cache"],
               ]}
@@ -69,6 +70,7 @@ export function SettingsModal({ initial, onSaved, onClose, onNotify }: Props) {
         <div className="min-h-0 flex-1 overflow-y-auto p-4" style={{ scrollbarGutter: "stable" }}>
           {tab === "indexers" && <IndexersTab s={s} setS={setS} />}
           {tab === "network" && <NetworkTab s={s} setS={setS} />}
+          {tab === "downloads" && <DownloadsTab s={s} setS={setS} />}
           {tab === "clients" && <ClientsTab s={s} setS={setS} onNotify={onNotify} />}
           {tab === "cache" && <CacheTab s={s} setS={setS} onNotify={onNotify} />}
         </div>
@@ -185,6 +187,43 @@ function NetworkTab({ s, setS }: TabProps) {
       </Field>
       <Field label="Tor timeout (ms)">
         <NumberInput value={s.net.torTimeoutMs} min={2000} max={60000} onChange={(n) => net({ torTimeoutMs: n })} />
+      </Field>
+    </div>
+  );
+}
+
+function DownloadsTab({ s, setS }: TabProps) {
+  const dl = (patch: Partial<AppSettings["download"]>) => setS((p) => ({ ...p, download: { ...p.download, ...patch } }));
+  const [ratio, setRatio] = useState(String(s.download.seedRatio));
+  return (
+    <div>
+      <p className="chrome mb-3 text-[11.5px] text-faint">Sectator downloads with its built-in libtorrent engine. Torrents keep seeding until they reach the ratio below; resuming a finished one seeds it without a limit.</p>
+      <Field label="Save folder" hint="Absolute path, e.g. C:\Users\you\Downloads\Torrents">
+        <TextInput mono value={s.download.dir ?? ""} placeholder="your Downloads folder" onChange={(e) => dl({ dir: orNull(e.target.value) })} className="flex-1" />
+      </Field>
+      <Field label="Listen port" hint="Incoming peers (TCP and uTP); mapped with UPnP / NAT-PMP when the router allows. 0 picks a random port.">
+        <NumberInput value={s.download.listenPort} max={65535} onChange={(n) => dl({ listenPort: n })} />
+      </Field>
+      <Field label="Download limit (KiB/s)" hint="0 = unlimited">
+        <NumberInput value={s.download.maxDownloadKib} max={2000000} onChange={(n) => dl({ maxDownloadKib: n })} />
+      </Field>
+      <Field label="Upload limit (KiB/s)" hint="0 = unlimited">
+        <NumberInput value={s.download.maxUploadKib} max={2000000} onChange={(n) => dl({ maxUploadKib: n })} />
+      </Field>
+      <Field label="Stop seeding at ratio" hint="Uploaded ÷ downloaded; 0 = seed forever">
+        <TextInput
+          mono
+          inputMode="decimal"
+          value={ratio}
+          onChange={(e) => {
+            const v = e.target.value.replace(/[^\d.]/g, "");
+            setRatio(v);
+            const n = Number(v);
+            if (v && Number.isFinite(n)) dl({ seedRatio: Math.min(100, n) });
+          }}
+          onBlur={() => setRatio(String(s.download.seedRatio))}
+          className="w-24 text-right"
+        />
       </Field>
     </div>
   );

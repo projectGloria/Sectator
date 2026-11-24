@@ -1,6 +1,6 @@
 // Typed wrappers over the Rust IPC commands (src-tauri/src/commands/mod.rs).
 import { invoke } from "@tauri-apps/api/core";
-import type { AppSettings, Bookmark, ClientConfig, HistoryEntry, IndexerHealth, Preset, TorrentResult } from "./types";
+import type { AppSettings, Bookmark, ClientConfig, Download, DownloadFile, HistoryEntry, IndexerHealth, Preset, TorrentResult } from "./types";
 
 export const api = {
   getSettings: () => invoke<AppSettings>("get_settings"),
@@ -23,4 +23,14 @@ export const api = {
   openMagnet: (magnet: string) => invoke<void>("open_magnet", { magnet }),
   pushToClient: (magnet: string, clientId?: string) => invoke<"added" | "duplicate">("push_to_client", { magnet, clientId: clientId ?? null }),
   testClient: (config: ClientConfig) => invoke<string>("test_client", { config }),
+
+  download: (magnet: string, savePath?: string) => invoke<string>("download_add", { magnet, savePath: savePath ?? null }),
+  downloads: () => invoke<Download[]>("download_list"),
+  pauseDownload: (infoHash: string) => invoke<void>("download_pause", { infoHash }),
+  resumeDownload: (infoHash: string) => invoke<void>("download_resume", { infoHash }),
+  recheckDownload: (infoHash: string) => invoke<void>("download_recheck", { infoHash }),
+  removeDownload: (infoHash: string, deleteFiles: boolean) => invoke<void>("download_remove", { infoHash, deleteFiles }),
+  downloadFiles: (infoHash: string) => invoke<DownloadFile[]>("download_files", { infoHash }),
+  setWanted: (infoHash: string, files: [number, boolean][]) => invoke<void>("download_set_wanted", { infoHash, files }),
+  revealDownload: (infoHash: string) => invoke<void>("download_reveal", { infoHash }),
 };

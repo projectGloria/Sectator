@@ -144,6 +144,52 @@ export interface AppSettings {
   scrapeTop: number;
   clients: ClientConfig[];
   defaultClient: string | null;
+  download: DownloadSettings;
+}
+
+// ---- built-in downloader (src-tauri/src/clients/download) ----
+
+export interface DownloadSettings {
+  /** Save folder; null = the user's Downloads folder. */
+  dir: string | null;
+  listenPort: number;
+  maxDownloadKib: number;
+  maxUploadKib: number;
+  /** Stop seeding at this upload ratio; 0 = no limit. */
+  seedRatio: number;
+}
+
+export type DownloadState = "checking" | "metadata" | "downloading" | "seeding" | "paused" | "completed" | "error";
+
+export interface Download {
+  infoHash: string;
+  name: string;
+  savePath: string;
+  state: DownloadState;
+  progress: number;
+  size: number;
+  done: number;
+  downRate: number;
+  upRate: number;
+  seeds: number;
+  peers: number;
+  swarmSeeds: number;
+  swarmPeers: number;
+  uploaded: number;
+  downloaded: number;
+  ratio: number;
+  etaSecs: number | null;
+  error: string | null;
+  addedAt: number;
+  completedAt: number | null;
+}
+
+export interface DownloadFile {
+  index: number;
+  path: string;
+  size: number;
+  done: number;
+  wanted: boolean;
 }
 
 export interface HistoryEntry {

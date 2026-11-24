@@ -4,7 +4,10 @@ import { AlertTriangle, ArrowDown, ArrowUp, BadgeCheck, FileSearch, Radio } from
 import { formatAge, formatCount, formatSize } from "../lib/format";
 import { leechersOf, seedersOf, type TorrentResult } from "../lib/types";
 
-export type SortKey = "score" | "title" | "size" | "seeders" | "leechers" | "age" | "sources";
+export type SortKey = "score" | "title" | "uploader" | "size" | "seeders" | "leechers" | "age" | "sources";
+
+// Sorts after any real name, so unknown uploaders land last in ascending order.
+const LAST = String.fromCharCode(0xffff);
 export interface Sort {
   key: SortKey;
   desc: boolean;
@@ -12,6 +15,7 @@ export interface Sort {
 
 const COLUMNS: { key: SortKey; label: string; className: string }[] = [
   { key: "title", label: "Name", className: "flex-1 min-w-0" },
+  { key: "uploader", label: "Uploader", className: "w-[132px]" },
   { key: "size", label: "Size", className: "w-[84px] justify-end" },
   { key: "seeders", label: "Seed", className: "w-[64px] justify-end" },
   { key: "leechers", label: "Leech", className: "w-[64px] justify-end" },
@@ -27,6 +31,8 @@ export function sortResults(rows: TorrentResult[], sort: Sort): TorrentResult[] 
         return r.score;
       case "title":
         return r.title.toLowerCase();
+      case "uploader":
+        return r.uploader?.toLowerCase() ?? LAST;
       case "size":
         return r.size;
       case "seeders":
@@ -78,7 +84,7 @@ export function ResultsTable({ rows, selected, sort, onSort, onSelect, onActivat
           return (
             <button
               key={c.key}
-              onClick={() => onSort({ key: c.key, desc: active ? !sort.desc : c.key !== "title" })}
+              onClick={() => onSort({ key: c.key, desc: active ? !sort.desc : c.key !== "title" && c.key !== "uploader" })}
               className={`flex h-full items-center gap-1 px-2.5 transition-colors duration-150 hover:bg-raised hover:text-fg ${c.className} ${active ? "text-fg" : ""}`}
             >
               {c.label}
@@ -130,7 +136,6 @@ function Row({ r, top, odd, selected, onClick, onDoubleClick }: { r: TorrentResu
     >
       <div className="flex min-w-0 flex-1 items-center gap-1.5 px-2.5">
         {flagged && <AlertTriangle size={12} className="shrink-0 text-warn" />}
-        {r.verifiedUploader && <BadgeCheck size={12} className="shrink-0 text-good" />}
         {r.fileMatch && <FileSearch size={12} className="shrink-0 text-[#60a5fa]" />}
         <span className="truncate" title={r.title}>
           {r.title}
@@ -141,9 +146,21 @@ function Row({ r, top, odd, selected, onClick, onDoubleClick }: { r: TorrentResu
           </span>
         ))}
       </div>
+      <div className="flex w-[132px] min-w-0 items-center gap-1 px-2.5 text-dim">
+        {r.uploader ? (
+          <>
+            <span className="truncate" title={r.verifiedUploader ? `${r.uploader} (trusted/VIP on the site)` : r.uploader}>
+              {r.uploader}
+            </span>
+            {r.verifiedUploader && <BadgeCheck size={12} className="shrink-0 text-good" aria-label="Trusted uploader" />}
+          </>
+        ) : (
+          <span className="text-faint">—</span>
+        )}
+      </div>
       <div className="num w-[84px] px-2.5 text-right text-dim">{formatSize(r.size)}</div>
       <div className={`num flex w-[64px] items-center justify-end gap-1 px-2.5 ${seeds == null ? "text-faint" : seeds > 0 ? "text-good" : "text-bad"}`}>
-        {r.live && <Radio size={10} className="text-accent" aria-label="Live scrape" />}
+        {r.live && <Radio size={10} className="text-accent" aria-label="Live tracker count" />}
         {formatCount(seeds)}
       </div>
       <div className="num w-[64px] px-2.5 text-right text-dim">{formatCount(leech)}</div>

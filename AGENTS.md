@@ -1,8 +1,9 @@
 # AGENTS.md — Sectator
 
-Local-first Windows desktop torrent meta-search engine: Tauri v2 + Rust (`tokio`) backend, React/TypeScript/Vite/Tailwind frontend, fanning out to curated, DHT-index, and Torznab sources and ranking deduplicated results.
+Local-first Windows desktop torrent meta-search engine: Tauri v2 + Rust (`tokio`) backend, React/TypeScript/Vite/Tailwind frontend, fanning out to curated, DHT-index, and Torznab sources, ranking deduplicated results, with a built-in libtorrent downloader.
 
 ## Commands
+- Native deps (once, from `src-tauri/`): `vcpkg install --triplet x64-windows-static-md --x-install-root=vcpkg_installed` — libtorrent/Boost/OpenSSL from `src-tauri/vcpkg.json`; `build.rs` panics without them (`SECTATOR_VCPKG_INSTALLED` overrides the root)
 - Run / Dev: `npm run tauri dev`
 - Test (all): `npm run test:rust` (= `cargo test --manifest-path src-tauri/Cargo.toml`)
 - Test (single): `cargo test --manifest-path src-tauri/Cargo.toml <test_name>`
@@ -14,7 +15,7 @@ Local-first Windows desktop torrent meta-search engine: Tauri v2 + Rust (`tokio`
 - `src-tauri/src/lib.rs` — builds `Arc<Store>` + `Arc<Engine>` from stored settings, prunes cache (30 days), wires the offline FTS source, registers IPC handlers.
 - `src-tauri/src/engine/runner.rs` — concurrent fan-out, cancellation, circuit breaker, cache replay (`Origin::Cache`) and offline fallback (`Origin::Offline`).
 - `src-tauri/src/commands/` — thin IPC wrappers only; logic lives in `engine/`, `storage/`, `scraper/`, `clients/`.
-- `src-tauri/src/clients/` — qBittorrent WebUI and Transmission RPC push/test.
+- `src-tauri/src/clients/` — qBittorrent WebUI and Transmission RPC push/test; `clients/download/` is the built-in downloader (`Downloader`: lazy session, fast-resume files in `<appdata>/downloads`, seed-ratio stop) over the `cxx` bridge `ffi.rs` ↔ `src-tauri/cpp/lt_bridge.{h,cpp}`.
 - `src-tauri/src/storage/` — SQLite: FTS5 torrent cache (`cache.rs`), history/presets/bookmarks/indexer health (`library.rs`), settings (`settings.rs`).
 - `src/App.tsx` + `src/hooks/useSearch.ts` — UI shell and streaming search state; typed IPC wrappers in `src/lib/api.ts`, payload types in `src/lib/types.ts`.
 - `.github/workflows/release.yml` — on push to `main` with a changed version: test, build, pack with `gloria-setup`, publish a release.

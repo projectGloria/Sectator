@@ -150,7 +150,7 @@ pub fn passes_filters(r: &TorrentResult, q: &SearchQuery) -> bool {
     }
     if !q.by.is_empty() {
         // Re-derive the group: cached results keep the meta from when they were stored.
-        let group = r.meta.group.clone().or_else(|| release::parse_group(&r.title));
+        let group = r.meta.group.clone().or_else(|| release::group_for(&r.title, &r.files));
         if !q.by.iter().any(|b| groups::matches(b, r.uploader.as_deref(), group.as_deref(), &r.title)) {
             return false;
         }

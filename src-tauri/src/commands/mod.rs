@@ -6,6 +6,7 @@ use serde::Serialize;
 use tauri::ipc::Channel;
 use tauri::State;
 
+use crate::clients::download::{Download, DownloadFile, Downloader};
 use crate::clients::{self, ClientConfig, PushOutcome};
 use crate::engine::runner::{Engine, EngineConfig, Origin, SearchEvent};
 use crate::indexers::{registry, IndexerConfig};
@@ -17,6 +18,7 @@ use crate::storage::Store;
 
 type Db<'a> = State<'a, Arc<Store>>;
 type Eng<'a> = State<'a, Arc<Engine>>;
+type Dl<'a> = State<'a, Arc<Downloader>>;
 
 fn now() -> i64 {
     chrono::Utc::now().timestamp()
@@ -93,11 +95,12 @@ pub fn get_settings(store: Db<'_>) -> AppSettings {
 
 /// Persist settings and apply them to the running engine; returns what was stored.
 #[tauri::command]
-pub fn save_settings(store: Db<'_>, engine: Eng<'_>, settings: AppSettings) -> Result<AppSettings, String> {
+pub fn save_settings(store: Db<'_>, engine: Eng<'_>, dl: Dl<'_>, settings: AppSettings) -> Result<AppSettings, String> {
     let s = settings.sanitized();
     store.save_app_settings(&s).map_err(err)?;
     engine.set_config(engine_config(&s));
     engine.set_indexers(build_indexers(&s.indexers));
+    dl.apply_settings(s.download.clone());
     Ok(s)
 }
 
@@ -201,4 +204,67 @@ pub async fn push_to_client(store: Db<'_>, client_id: Option<String>, magnet: St
 #[tauri::command]
 pub async fn test_client(config: ClientConfig) -> Result<String, String> {
     clients::test(&config).await.map_err(err)
+}
+
+// ---- built-in downloader (clients/download) ----
+
+/// Run a blocking downloader call off the async runtime (libtorrent calls wait on
+/// its network thread; the first one also starts the session).
+async fn blocking<T: Send + 'static>(dl: &Arc<Downloader>, f: impl FnOnce(&Downloader) -> Result<T, String> + Send + 'static) -> Result<T, String> {
+    let dl = dl.clone();
+    tauri::async_runtime::spawn_blocking(move || f(&dl)).await.map_err(err)?
+}
+
+/// Start downloading a magnet; returns its infohash. `save_path` overrides the folder.
+#[tauri::command]
+pub async fn download_add(dl: Dl<'_>, magnet: String, save_path: Option<String>) -> Result<String, String> {
+    let hash = blocking(dl.inner(), move |d| d.add_magnet(&magnet, save_path.as_deref(), false).map_err(err)).await?;
+    // Write its resume file right away so a crash doesn't lose the new download.
+    let _ = blocking(dl.inner(), |d| d.persist(false, 3_000).map_err(err)).await;
+    Ok(hash)
+}
+
+#[tauri::command]
+pub fn download_list(dl: Dl<'_>) -> Vec<Download> {
+    dl.list()
+}
+
+#[tauri::command]
+pub fn download_pause(dl: Dl<'_>, info_hash: String) -> Result<(), String> {
+    dl.pause(&info_hash).map_err(err)
+}
+
+#[tauri::command]
+pub fn download_resume(dl: Dl<'_>, info_hash: String) -> Result<(), String> {
+    dl.resume(&info_hash).map_err(err)
+}
+
+#[tauri::command]
+pub fn download_recheck(dl: Dl<'_>, info_hash: String) -> Result<(), String> {
+    dl.recheck(&info_hash).map_err(err)
+}
+
+/// Remove a download; `delete_files` also deletes what it downloaded.
+#[tauri::command]
+pub fn download_remove(dl: Dl<'_>, info_hash: String, delete_files: bool) -> Result<(), String> {
+    dl.remove(&info_hash, delete_files).map_err(err)
+}
+
+#[tauri::command]
+pub fn download_files(dl: Dl<'_>, info_hash: String) -> Result<Vec<DownloadFile>, String> {
+    dl.files(&info_hash).map_err(err)
+}
+
+/// Pick files to fetch: `[fileIndex, wanted]` pairs.
+#[tauri::command]
+pub fn download_set_wanted(dl: Dl<'_>, info_hash: String, files: Vec<(i32, bool)>) -> Result<(), String> {
+    dl.set_wanted(&info_hash, &files).map_err(err)
+}
+
+/// Show a download's files in Explorer.
+#[tauri::command]
+pub fn download_reveal(app: tauri::AppHandle, dl: Dl<'_>, info_hash: String) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    let path = dl.content_path(&info_hash).ok_or("no such download")?;
+    app.opener().reveal_item_in_dir(path).map_err(err)
 }

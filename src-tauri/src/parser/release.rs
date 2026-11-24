@@ -4,7 +4,7 @@
 use once_cell::sync::Lazy;
 use regex::Regex;
 
-use crate::models::{Category, ParsedMeta};
+use crate::models::{Category, ParsedMeta, TorrentFile};
 
 /// Wrap a pattern with alphanumeric word boundaries (`regex` has no lookaround,
 /// so the boundary characters are consumed by non-capturing groups).
@@ -325,6 +325,43 @@ pub fn parse_group(title: &str) -> Option<String> {
     Some(g.to_string())
 }
 
+/// Whether a site cut the title short: long, with a bracket left open (TPB stops at 64
+/// characters, so `… (1080p BluRay x265 HEVC 10bit AAC 5.1` loses its closing encoder).
+pub fn looks_truncated(title: &str) -> bool {
+    let t = title.trim();
+    let open = |a: char, b: char| t.matches(a).count() > t.matches(b).count();
+    t.chars().count() >= 60 && (open('(', ')') || open('[', ']'))
+}
+
+const VIDEO_EXTS: &[&str] = &["mkv", "mp4", "avi", "m4v", "ts", "wmv", "webm", "mov"];
+
+/// The release group shared by most of a torrent's video files, e.g. `Silence` from
+/// `Fargo (2014) - S02E08 - Loplop (1080p x265 Silence).mkv`.
+pub fn group_from_files(files: &[TorrentFile]) -> Option<String> {
+    let stems: Vec<&str> = files
+        .iter()
+        .filter_map(|f| {
+            let name = f.path.rsplit(['/', '\\']).next()?;
+            let (stem, ext) = name.rsplit_once('.')?;
+            VIDEO_EXTS.contains(&ext.to_ascii_lowercase().as_str()).then_some(stem)
+        })
+        .collect();
+    let mut counts: Vec<(String, usize)> = Vec::new();
+    for g in stems.iter().filter_map(|s| parse_group(s)) {
+        match counts.iter_mut().find(|(k, _)| k.eq_ignore_ascii_case(&g)) {
+            Some((_, n)) => *n += 1,
+            None => counts.push((g, 1)),
+        }
+    }
+    let (group, n) = counts.into_iter().max_by_key(|(_, n)| *n)?;
+    (n * 2 > stems.len()).then_some(group)
+}
+
+/// Release group from the title, or from the file names when the title was cut short.
+pub fn group_for(title: &str, files: &[TorrentFile]) -> Option<String> {
+    parse_group(title).or_else(|| looks_truncated(title).then(|| group_from_files(files)).flatten())
+}
+
 /// Encoder named at the end of a trailing spec block, as in
 /// `Show S01 (1080p BluRay x265 HEVC 10bit AAC 5.1 Tigole) [QxR]`.
 fn paren_encoder(title: &str) -> Option<String> {
@@ -375,6 +412,31 @@ pub fn infer_category(meta: &ParsedMeta) -> Option<Category> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn group_recovered_from_files_when_title_is_cut() {
+        let cut = "Fargo (2014) Season 2 S02 (1080p BluRay x265 HEVC 10bit AAC 5.1";
+        assert!(looks_truncated(cut));
+        assert!(!looks_truncated("Fargo (2014) Season 5 S05 (1080p AMZN WEB-DL x265 HEVC 10bit EAC3 5.1 Silence)"));
+        assert!(!looks_truncated("Fargo (2014"));
+        let f = |p: &str| TorrentFile { path: p.into(), size: 1 };
+        // From TPB's file list for that torrent.
+        let files = vec![
+            f("Fargo (2014) - S02E08 - Loplop (1080p x265 Silence).mkv"),
+            f("Fargo (2014) - S02E03 - The Myth of Sisyphus (1080p BluRay x265 Silence).mkv"),
+            f("Season 2/Fargo (2014) - S02E04 - Fear and Trembling (1080p BluRay x265 Silence).mkv"),
+            f("Fargo (2014) - S02E04 - Fear and Trembling (1080p BluRay x265 Silence).srt"),
+        ];
+        assert_eq!(parse_group(cut), None);
+        assert_eq!(group_from_files(&files).as_deref(), Some("Silence"));
+        assert_eq!(group_for(cut, &files).as_deref(), Some("Silence"));
+        // A complete title never borrows a group from its files.
+        assert_eq!(group_for("Fargo.S04.1080p.AMZN.WEBRip.DDP5.1.x264-TOMMY", &files).as_deref(), Some("TOMMY"));
+        assert_eq!(group_for("Some Long Untagged Title Without Any Group Information At All Here", &files), None);
+        // Files that disagree give no group.
+        let mixed = vec![f("a (1080p x265 Joy).mkv"), f("b (1080p x265 Silence).mkv")];
+        assert_eq!(group_from_files(&mixed), None);
+    }
 
     #[test]
     fn scene_movie_remux() {
