@@ -3666,13 +3666,14 @@ checksum = "d68f2ec51b097e4c1a75b681a8bec621909b5e91f15bb7b840c4f2f7b01148b2"
 
 [[package]]
 name = "sectator"
-version = "0.2.0-alpha.1"
+version = "0.2.0-alpha.2"
 dependencies = [
  "async-trait",
  "chrono",
  "cxx",
  "cxx-build",
  "once_cell",
+ "png",
  "quick-xml",
  "regex",
  "reqwest",
@@ -3687,6 +3688,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "url",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

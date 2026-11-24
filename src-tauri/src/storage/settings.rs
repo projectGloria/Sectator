@@ -25,7 +25,17 @@ pub struct AppSettings {
     pub default_client: Option<String>,
     /// Built-in downloader (libtorrent).
     pub download: DownloadSettings,
+    /// UI colour theme id; unknown ids fall back to the default.
+    pub theme: String,
+    /// Webview zoom factor (1.0 = 100%), set with Ctrl +/-/0 or in Appearance.
+    pub ui_zoom: f64,
 }
+
+/// Allowed UI zoom range.
+pub const ZOOM_RANGE: (f64, f64) = (0.5, 2.0);
+
+/// Theme ids the frontend ships (`src/lib/theme.ts`); the first is the default.
+pub const THEMES: [&str; 3] = ["claude", "claude-dark", "midnight"];
 
 impl Default for AppSettings {
     fn default() -> Self {
@@ -37,6 +47,8 @@ impl Default for AppSettings {
             clients: Vec::new(),
             default_client: None,
             download: DownloadSettings::default(),
+            theme: THEMES[0].to_string(),
+            ui_zoom: 1.0,
         }
     }
 }
@@ -61,6 +73,10 @@ impl AppSettings {
         self.net.proxy = self.net.proxy.take().map(|p| p.trim().to_string()).filter(|p| !p.is_empty());
         self.net.doh_url = self.net.doh_url.take().map(|p| p.trim().to_string()).filter(|p| !p.is_empty());
         self.download = self.download.sanitized();
+        self.ui_zoom = if self.ui_zoom.is_finite() { (self.ui_zoom.clamp(ZOOM_RANGE.0, ZOOM_RANGE.1) * 100.0).round() / 100.0 } else { 1.0 };
+        if !THEMES.contains(&self.theme.as_str()) {
+            self.theme = THEMES[0].to_string();
+        }
         if self.default_client.as_ref().is_some_and(|id| !self.clients.iter().any(|c| &c.id == id)) {
             self.default_client = None;
         }
@@ -135,10 +151,16 @@ mod tests {
 
     #[test]
     fn sanitize_clamps() {
-        let mut s = AppSettings { cache_ttl_secs: -5, scrape_top: 10_000, default_client: Some("gone".into()), ..Default::default() };
+        let mut s = AppSettings { cache_ttl_secs: -5, scrape_top: 10_000, default_client: Some("gone".into()), theme: "neon".into(), ui_zoom: 7.0, ..Default::default() };
         s.net.proxy = Some("   ".into());
         let s = s.sanitized();
         assert_eq!((s.cache_ttl_secs, s.scrape_top), (0, 500));
         assert!(s.net.proxy.is_none() && s.default_client.is_none());
+        assert_eq!(s.theme, "claude", "unknown theme falls back to the default");
+        assert_eq!(s.ui_zoom, 2.0, "zoom clamped to its range");
+        let z = AppSettings { ui_zoom: f64::NAN, ..Default::default() }.sanitized();
+        assert_eq!(z.ui_zoom, 1.0, "NaN zoom resets to 100%");
+        let z = AppSettings { ui_zoom: 1.1000000001, ..Default::default() }.sanitized();
+        assert_eq!(z.ui_zoom, 1.1, "rounded to whole percent");
     }
 }

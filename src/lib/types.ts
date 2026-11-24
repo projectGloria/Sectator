@@ -145,6 +145,10 @@ export interface AppSettings {
   clients: ClientConfig[];
   defaultClient: string | null;
   download: DownloadSettings;
+  /** Colour theme id (see src/lib/theme.ts). */
+  theme: string;
+  /** Webview zoom factor, 1 = 100% (see src/lib/zoom.ts). */
+  uiZoom: number;
 }
 
 // ---- built-in downloader (src-tauri/src/clients/download) ----
@@ -182,7 +186,13 @@ export interface Download {
   error: string | null;
   addedAt: number;
   completedAt: number | null;
+  /** What the content is, from its files (src-tauri/src/parser/kind.rs). */
+  kind: ContentKind;
+  /** Extension holding the most bytes; picks the Windows shell icon. */
+  mainExt: string | null;
 }
+
+export type ContentKind = "video" | "audio" | "game" | "software" | "book" | "image" | "archive" | "other";
 
 export interface DownloadFile {
   index: number;

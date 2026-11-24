@@ -268,3 +268,10 @@ pub fn download_reveal(app: tauri::AppHandle, dl: Dl<'_>, info_hash: String) -> 
     let path = dl.content_path(&info_hash).ok_or("no such download")?;
     app.opener().reveal_item_in_dir(path).map_err(err)
 }
+
+/// The Windows shell icon (the default app's icon) for a file extension, as PNG bytes.
+#[tauri::command]
+pub async fn file_icon(ext: String) -> Result<tauri::ipc::Response, String> {
+    let png = tauri::async_runtime::spawn_blocking(move || crate::clients::download::icon::for_extension(&ext)).await.map_err(err)?;
+    png.map(tauri::ipc::Response::new).ok_or_else(|| "no icon".to_string())
+}

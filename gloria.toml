@@ -1,6 +1,6 @@
 id = "Sectator"
 name = "Sectator"
-version = "0.2.0-alpha.1"
+version = "0.2.0-alpha.2"
 main_exe = "sectator.exe"
 icon = "src-tauri/icons/icon.ico"
 accent = "#22d3ee"

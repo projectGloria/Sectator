@@ -33,4 +33,6 @@ export const api = {
   downloadFiles: (infoHash: string) => invoke<DownloadFile[]>("download_files", { infoHash }),
   setWanted: (infoHash: string, files: [number, boolean][]) => invoke<void>("download_set_wanted", { infoHash, files }),
   revealDownload: (infoHash: string) => invoke<void>("download_reveal", { infoHash }),
+  /** PNG bytes of the Windows shell icon for a file extension. */
+  fileIcon: (ext: string) => invoke<ArrayBuffer>("file_icon", { ext }),
 };

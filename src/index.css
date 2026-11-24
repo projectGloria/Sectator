@@ -1,19 +1,87 @@
 @import "tailwindcss";
 
 @theme {
+  /* Default palette: "Claude" (light). Other themes override these under [data-theme]. */
+  --color-bg: #ffffff;
+  --color-panel: #f4f3ee;
+  --color-raised: #ecebe4;
+  --color-lift: #e5e3da;
+  --color-line: #e3e0d6;
+  --color-edge: #b1ada1;
+  --color-fg: #262624;
+  --color-dim: #5e5b54;
+  --color-faint: #8f8b80;
+  --color-accent: #c15f3c;
+  --color-accent-hi: #ad5332;
+  --color-accent-lo: #96472a;
+  --color-on-accent: #ffffff;
+  --color-good: #2f855a;
+  --color-warn: #b7791f;
+  --color-bad: #c53030;
+  --color-violet: #7c5cc4;
+  --color-blue: #2f6fc4;
+  --color-pink: #c2417f;
+  --color-zebra: rgb(0 0 0 / 0.018);
+  --color-scroll: #d8d4c8;
+  --color-scroll-hi: #b1ada1;
+  --font-sans: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "Cascadia Mono", "Cascadia Code", Consolas, ui-monospace, monospace;
+}
+
+:root {
+  color-scheme: light;
+}
+
+:root[data-theme="claude-dark"] {
+  color-scheme: dark;
+  --color-bg: #1f1e1d;
+  --color-panel: #262624;
+  --color-raised: #30302e;
+  --color-lift: #383734;
+  --color-line: #3a3936;
+  --color-edge: #55534d;
+  --color-fg: #f4f3ee;
+  --color-dim: #b1ada1;
+  --color-faint: #85827a;
+  --color-accent: #d97757;
+  --color-accent-hi: #e38a6c;
+  --color-accent-lo: #c15f3c;
+  --color-on-accent: #ffffff;
+  --color-good: #7bc496;
+  --color-warn: #e3b35a;
+  --color-bad: #ef6461;
+  --color-violet: #b59cf2;
+  --color-blue: #7faef0;
+  --color-pink: #e88bb8;
+  --color-zebra: rgb(255 255 255 / 0.015);
+  --color-scroll: #46443f;
+  --color-scroll-hi: #5c5a54;
+}
+
+:root[data-theme="midnight"] {
+  color-scheme: dark;
   --color-bg: #0a0b0d;
   --color-panel: #101216;
   --color-raised: #161920;
+  --color-lift: #1b1f27;
   --color-line: #22262e;
+  --color-edge: #2e333d;
   --color-fg: #e5e7eb;
   --color-dim: #8b93a1;
   --color-faint: #5b6270;
   --color-accent: #22d3ee;
+  --color-accent-hi: #4fe0f5;
+  --color-accent-lo: #1bb8d1;
+  --color-on-accent: #0a0b0d;
   --color-good: #34d399;
   --color-warn: #fbbf24;
   --color-bad: #f87171;
-  --font-sans: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
-  --font-mono: "Cascadia Mono", "Cascadia Code", Consolas, ui-monospace, monospace;
+  --color-violet: #a78bfa;
+  --color-blue: #60a5fa;
+  --color-pink: #f472b6;
+  --color-zebra: rgb(255 255 255 / 0.012);
+  --color-scroll: #2b303a;
+  --color-scroll-hi: #3a404c;
 }
 
 html,
@@ -28,12 +96,13 @@ body,
   font-family: var(--font-sans);
   font-size: 13px;
   -webkit-font-smoothing: antialiased;
+  transition: background-color 150ms, color 150ms;
 }
 
 /* Thin themed scrollbars; overlay-style gutter so layout never shifts. */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #2b303a transparent;
+  scrollbar-color: var(--color-scroll) transparent;
 }
 ::-webkit-scrollbar {
   width: 6px;
@@ -43,11 +112,11 @@ body,
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #2b303a;
+  background: var(--color-scroll);
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #3a404c;
+  background: var(--color-scroll-hi);
 }
 ::-webkit-scrollbar-corner {
   background: transparent;
@@ -73,4 +142,47 @@ select {
 :focus-visible {
   outline: 1px solid var(--color-accent);
   outline-offset: 1px;
+}
+
+/* Themed range slider (Settings → Appearance zoom). */
+.zoom-range {
+  appearance: none;
+  height: 16px;
+  background: transparent;
+  cursor: pointer;
+}
+.zoom-range::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--color-line);
+  transition: background-color 150ms;
+}
+.zoom-range:hover::-webkit-slider-runnable-track {
+  background: var(--color-edge);
+}
+.zoom-range::-webkit-slider-thumb {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;
+  border-radius: 999px;
+  background: var(--color-accent);
+  border: 2px solid var(--color-bg);
+  transition: transform 150ms, background-color 150ms;
+}
+.zoom-range:hover::-webkit-slider-thumb {
+  background: var(--color-accent-hi);
+}
+.zoom-range:active::-webkit-slider-thumb {
+  transform: scale(1.15);
+  background: var(--color-accent-lo);
+}
+.zoom-range:focus-visible {
+  outline: 1px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.zoom-range:disabled {
+  opacity: 0.4;
+  pointer-events: none;
 }

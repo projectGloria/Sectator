@@ -72,6 +72,7 @@ pub fn run() {
             commands::download_files,
             commands::download_set_wanted,
             commands::download_reveal,
+            commands::file_icon,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Sectator")

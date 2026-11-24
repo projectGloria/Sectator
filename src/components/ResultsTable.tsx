@@ -1,6 +1,21 @@
 import { useEffect, useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { AlertTriangle, ArrowDown, ArrowUp, BadgeCheck, FileSearch, Radio } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowDown,
+  ArrowDownToLine,
+  ArrowUp,
+  ArrowUpFromLine,
+  BadgeCheck,
+  Clock,
+  FileSearch,
+  Gauge,
+  HardDrive,
+  Layers,
+  Radio,
+  User,
+  type LucideIcon,
+} from "lucide-react";
 import { formatAge, formatCount, formatSize } from "../lib/format";
 import { leechersOf, seedersOf, type TorrentResult } from "../lib/types";
 
@@ -13,15 +28,15 @@ export interface Sort {
   desc: boolean;
 }
 
-const COLUMNS: { key: SortKey; label: string; className: string }[] = [
-  { key: "title", label: "Name", className: "flex-1 min-w-0" },
-  { key: "uploader", label: "Uploader", className: "w-[132px]" },
-  { key: "size", label: "Size", className: "w-[84px] justify-end" },
-  { key: "seeders", label: "Seed", className: "w-[64px] justify-end" },
-  { key: "leechers", label: "Leech", className: "w-[64px] justify-end" },
-  { key: "age", label: "Age", className: "w-[56px] justify-end" },
-  { key: "sources", label: "Src", className: "w-[78px] justify-end" },
-  { key: "score", label: "Score", className: "w-[60px] justify-end" },
+const COLUMNS: { key: SortKey; label: string; icon: LucideIcon; text?: boolean; className: string }[] = [
+  { key: "title", label: "Name", icon: FileSearch, text: true, className: "flex-1 min-w-0" },
+  { key: "uploader", label: "Uploader", icon: User, text: true, className: "w-[132px]" },
+  { key: "size", label: "Size", icon: HardDrive, className: "w-[84px] justify-end" },
+  { key: "seeders", label: "Seeders", icon: ArrowUpFromLine, className: "w-[64px] justify-end" },
+  { key: "leechers", label: "Leechers", icon: ArrowDownToLine, className: "w-[64px] justify-end" },
+  { key: "age", label: "Age", icon: Clock, className: "w-[56px] justify-end" },
+  { key: "sources", label: "Sources", icon: Layers, className: "w-[78px] justify-end" },
+  { key: "score", label: "Score", icon: Gauge, className: "w-[60px] justify-end" },
 ];
 
 export function sortResults(rows: TorrentResult[], sort: Sort): TorrentResult[] {
@@ -85,9 +100,11 @@ export function ResultsTable({ rows, selected, sort, onSort, onSelect, onActivat
             <button
               key={c.key}
               onClick={() => onSort({ key: c.key, desc: active ? !sort.desc : c.key !== "title" && c.key !== "uploader" })}
-              className={`flex h-full items-center gap-1 px-2.5 transition-colors duration-150 hover:bg-raised hover:text-fg ${c.className} ${active ? "text-fg" : ""}`}
+              title={`Sort by ${c.label.toLowerCase()}`}
+              aria-label={`Sort by ${c.label.toLowerCase()}`}
+              className={`flex h-full items-center gap-1 px-2.5 transition-colors duration-150 hover:bg-raised hover:text-fg active:bg-line focus-visible:text-fg ${c.className} ${active ? "text-accent" : ""}`}
             >
-              {c.label}
+              {c.text ? c.label : <c.icon size={12} />}
               {active && (sort.desc ? <ArrowDown size={11} /> : <ArrowUp size={11} />)}
             </button>
           );
@@ -119,7 +136,21 @@ export function ResultsTable({ rows, selected, sort, onSort, onSelect, onActivat
   );
 }
 
-function Row({ r, top, odd, selected, onClick, onDoubleClick }: { r: TorrentResult; top: number; odd: boolean; selected: boolean; onClick: () => void; onDoubleClick: () => void }) {
+function Row({
+  r,
+  top,
+  odd,
+  selected,
+  onClick,
+  onDoubleClick,
+}: {
+  r: TorrentResult;
+  top: number;
+  odd: boolean;
+  selected: boolean;
+  onClick: () => void;
+  onDoubleClick: () => void;
+}) {
   const seeds = seedersOf(r);
   const leech = leechersOf(r);
   const flagged = r.flags.some((f) => f !== "noSeedData");
@@ -130,13 +161,13 @@ function Row({ r, top, odd, selected, onClick, onDoubleClick }: { r: TorrentResu
       onClick={onClick}
       onDoubleClick={onDoubleClick}
       className={`chrome absolute left-0 right-0 flex cursor-default items-center text-[12.5px] transition-colors duration-100 ${
-        selected ? "bg-accent/12 shadow-[inset_2px_0_0_var(--color-accent)]" : odd ? "bg-white/[0.012] hover:bg-raised" : "hover:bg-raised"
+        selected ? "bg-accent/12 shadow-[inset_2px_0_0_var(--color-accent)]" : odd ? "bg-zebra hover:bg-raised" : "hover:bg-raised"
       } ${flagged ? "opacity-60" : ""}`}
       style={{ top, height: ROW }}
     >
       <div className="flex min-w-0 flex-1 items-center gap-1.5 px-2.5">
         {flagged && <AlertTriangle size={12} className="shrink-0 text-warn" />}
-        {r.fileMatch && <FileSearch size={12} className="shrink-0 text-[#60a5fa]" />}
+        {r.fileMatch && <FileSearch size={12} className="shrink-0 text-blue" />}
         <span className="truncate" title={r.title}>
           {r.title}
         </span>
@@ -166,9 +197,7 @@ function Row({ r, top, odd, selected, onClick, onDoubleClick }: { r: TorrentResu
       <div className="num w-[64px] px-2.5 text-right text-dim">{formatCount(leech)}</div>
       <div className="num w-[56px] px-2.5 text-right text-dim">{formatAge(r.uploadedAt)}</div>
       <div className="num flex w-[78px] items-center justify-end gap-1 px-2.5 text-dim">
-        {(["curated", "torznab", "dht"] as const).map((k) =>
-          kinds.has(k) ? <span key={k} title={k} className={`h-1.5 w-1.5 rounded-full ${KIND_DOT[k]}`} /> : null,
-        )}
+        {(["curated", "torznab", "dht"] as const).map((k) => (kinds.has(k) ? <span key={k} title={k} className={`h-1.5 w-1.5 rounded-full ${KIND_DOT[k]}`} /> : null))}
         <span className="ml-0.5">{r.sources.length}</span>
       </div>
       <div className="num w-[60px] px-2.5 text-right text-faint">{r.score.toFixed(2)}</div>
@@ -176,4 +205,4 @@ function Row({ r, top, odd, selected, onClick, onDoubleClick }: { r: TorrentResu
   );
 }
 
-export const KIND_DOT: Record<string, string> = { curated: "bg-accent", torznab: "bg-good", dht: "bg-[#a78bfa]" };
+export const KIND_DOT: Record<string, string> = { curated: "bg-accent", torznab: "bg-good", dht: "bg-violet" };

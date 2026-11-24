@@ -7,11 +7,15 @@ import { ResultsTable, sortResults, type Sort } from "./components/ResultsTable"
 import { Inspector } from "./components/Inspector";
 import { Downloads } from "./components/Downloads";
 import { StatusBar } from "./components/StatusBar";
+import { DownloadBar } from "./components/DownloadBar";
+import { NavRail, type View } from "./components/NavRail";
 import { Sidebar } from "./components/Sidebar";
 import { SettingsModal } from "./components/SettingsModal";
 import { useSearch } from "./hooks/useSearch";
 import { api } from "./lib/api";
 import { setOperator } from "./lib/dsl";
+import { applyTheme } from "./lib/theme";
+import { ZOOM_STEP, applyZoom, clampZoom, zoomLabel } from "./lib/zoom";
 import type { AppSettings, Download, TorrentResult } from "./lib/types";
 
 const SHORTCUTS: [string, string][] = [
@@ -25,6 +29,7 @@ const SHORTCUTS: [string, string][] = [
   ["Ctrl R  F5", "Search live (skip cache)"],
   ["Ctrl B", "History · presets · bookmarks"],
   ["Ctrl ,", "Settings"],
+  ["Ctrl + − 0", "Zoom in · out · reset"],
   ["Esc", "Stop · clear"],
 ];
 
@@ -40,8 +45,9 @@ export default function App() {
   const [sidebar, setSidebar] = useState(false);
   const [bookmarks, setBookmarks] = useState<Set<string>>(new Set());
   const [libKey, setLibKey] = useState(0);
-  const [view, setView] = useState<"results" | "downloads">("results");
+  const [view, setView] = useState<View>("results");
   const [downloads, setDownloads] = useState<Download[]>([]);
+  const [dlSelected, setDlSelected] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const { state, search, cancel } = useSearch();
   const busy = state.phase === "searching" || state.phase === "scraping";
@@ -49,8 +55,18 @@ export default function App() {
   useEffect(() => {
     invoke<{ version: string }>("app_info").then((i) => setVersion(i.version));
     api.getSettings().then(setSettings, () => {});
-    api.bookmarks().then((b) => setBookmarks(new Set(b.map((x) => x.infoHash))), () => {});
+    api.bookmarks().then(
+      (b) => setBookmarks(new Set(b.map((x) => x.infoHash))),
+      () => {},
+    );
   }, []);
+
+  useEffect(() => {
+    if (settings) {
+      applyTheme(settings.theme);
+      applyZoom(settings.uiZoom);
+    }
+  }, [settings]);
 
   // History is written as each search starts; refresh the sidebar once it settles.
   useEffect(() => {
@@ -78,6 +94,44 @@ export default function App() {
     window.setTimeout(() => setToast((t) => (t === msg ? null : t)), 1800);
   }, []);
 
+  // Ctrl +/-/0 and Ctrl+wheel zoom the whole UI; the new factor is saved after a short pause.
+  const zoomSave = useRef<number | undefined>(undefined);
+  const zoomBy = useCallback(
+    (step: number | null) => {
+      const cur = settings;
+      if (!cur) return;
+      const uiZoom = clampZoom(step == null ? 1 : cur.uiZoom + step);
+      if (uiZoom === cur.uiZoom) return;
+      const next = { ...cur, uiZoom };
+      setSettings(next);
+      notify(`Zoom ${zoomLabel(uiZoom)}`);
+      window.clearTimeout(zoomSave.current);
+      zoomSave.current = window.setTimeout(() => api.saveSettings(next).catch(() => {}), 500);
+    },
+    [settings, notify],
+  );
+  useEffect(() => {
+    if (settingsOpen) return; // the modal edits its own copy of the settings
+    const onKey = (e: KeyboardEvent) => {
+      if (!e.ctrlKey || e.altKey) return;
+      const step = e.key === "=" || e.key === "+" ? ZOOM_STEP : e.key === "-" || e.key === "_" ? -ZOOM_STEP : e.key === "0" ? null : undefined;
+      if (step === undefined) return;
+      e.preventDefault();
+      zoomBy(step);
+    };
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey || !e.deltaY) return;
+      e.preventDefault();
+      zoomBy(e.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP);
+    };
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("wheel", onWheel, { passive: false });
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("wheel", onWheel);
+    };
+  }, [settingsOpen, zoomBy]);
+
   const copy = useCallback(
     (value: string, what: string) => {
       navigator.clipboard.writeText(value).then(
@@ -104,7 +158,7 @@ export default function App() {
       api.download(r.magnet).then(
         () => {
           refreshDownloads();
-          notify("Downloading — Ctrl+J shows progress");
+          notify("Download started");
         },
         (e) => notify(`Couldn't start download: ${e}`),
       );
@@ -126,16 +180,19 @@ export default function App() {
   const toggleBookmark = useCallback(
     (r: TorrentResult) => {
       const has = bookmarks.has(r.infoHash);
-      (has ? api.removeBookmark(r.infoHash) : api.addBookmark(r)).then(() => {
-        setBookmarks((prev) => {
-          const next = new Set(prev);
-          if (has) next.delete(r.infoHash);
-          else next.add(r.infoHash);
-          return next;
-        });
-        setLibKey((k) => k + 1);
-        notify(has ? "Bookmark removed" : "Bookmarked");
-      }, (e) => notify(String(e)));
+      (has ? api.removeBookmark(r.infoHash) : api.addBookmark(r)).then(
+        () => {
+          setBookmarks((prev) => {
+            const next = new Set(prev);
+            if (has) next.delete(r.infoHash);
+            else next.add(r.infoHash);
+            return next;
+          });
+          setLibKey((k) => k + 1);
+          notify(has ? "Bookmark removed" : "Bookmarked");
+        },
+        (e) => notify(String(e)),
+      );
     },
     [bookmarks, notify],
   );
@@ -278,42 +335,59 @@ export default function App() {
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden">
-      <Titlebar
-        version={version}
-        onSidebar={() => setSidebar((v) => !v)}
-        onSettings={() => setSettingsOpen(true)}
-        downloads={view === "downloads"}
-        active={activeDownloads}
-        onDownloads={() => setView((v) => (v === "downloads" ? "results" : "downloads"))}
-      />
-      <SearchBar ref={input} value={text} busy={busy} onChange={setText} onSubmit={submit} onCancel={cancel} />
-      <div className="relative flex min-h-0 flex-1">
-        {sidebar && <Sidebar refreshKey={libKey} query={text} onRun={run} onOpenMagnet={openMagnet} onNotify={notify} onClose={() => setSidebar(false)} />}
-        {view === "downloads" ? (
-          <Downloads items={downloads} onChanged={refreshDownloads} onNotify={notify} />
-        ) : (
-          <ResultsTable rows={rows} selected={selected} sort={sort} onSort={setSort} onSelect={setSelected} onActivate={open} empty={empty} />
-        )}
-        {view === "results" && inspector && current && (
-          <Inspector
-            r={current}
-            onClose={() => setInspector(false)}
-            onOpen={open}
-            onDownload={download}
-            onCopy={copy}
-            bookmarked={bookmarks.has(current.infoHash)}
-            onBookmark={toggleBookmark}
-            client={client?.name ?? null}
-            onSend={send}
-            onBy={(name) => run(setOperator(text, "by", name))}
-          />
-        )}
-        {toast && (
-          <div className="chrome pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-md border border-line bg-raised px-3 py-1.5 text-[12px] shadow-lg shadow-black/40">
-            {toast}
+      <Titlebar version={version} />
+      <div className="flex min-h-0 flex-1">
+        <NavRail
+          view={view}
+          onView={(v) => {
+            setView(v);
+            if (v === "results") input.current?.focus();
+          }}
+          library={sidebar}
+          onLibrary={() => setSidebar((v) => !v)}
+          onSettings={() => setSettingsOpen(true)}
+          active={activeDownloads}
+        />
+        <div className="flex min-w-0 flex-1 flex-col">
+          <SearchBar ref={input} value={text} busy={busy} onChange={setText} onSubmit={submit} onCancel={cancel} />
+          <div className="relative flex min-h-0 flex-1">
+            {sidebar && <Sidebar refreshKey={libKey} query={text} onRun={run} onOpenMagnet={openMagnet} onNotify={notify} onClose={() => setSidebar(false)} />}
+            {view === "downloads" ? (
+              <Downloads items={downloads} selected={dlSelected} onSelect={setDlSelected} onChanged={refreshDownloads} onNotify={notify} />
+            ) : (
+              <ResultsTable rows={rows} selected={selected} sort={sort} onSort={setSort} onSelect={setSelected} onActivate={open} empty={empty} />
+            )}
+            {view === "results" && inspector && current && (
+              <Inspector
+                r={current}
+                onClose={() => setInspector(false)}
+                onOpen={open}
+                onDownload={download}
+                onCopy={copy}
+                bookmarked={bookmarks.has(current.infoHash)}
+                onBookmark={toggleBookmark}
+                client={client?.name ?? null}
+                onSend={send}
+                onBy={(name) => run(setOperator(text, "by", name))}
+              />
+            )}
+            {toast && (
+              <div className="chrome pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-md border border-line bg-raised px-3 py-1.5 text-[12px] shadow-lg shadow-black/40">
+                {toast}
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
+      <DownloadBar
+        items={downloads}
+        open={view === "downloads"}
+        onToggle={() => setView((v) => (v === "downloads" ? "results" : "downloads"))}
+        onPick={(hash) => {
+          setDlSelected(hash);
+          setView("downloads");
+        }}
+      />
       <StatusBar
         phase={state.phase}
         statuses={state.statuses}

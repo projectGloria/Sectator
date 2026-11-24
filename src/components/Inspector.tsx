@@ -1,5 +1,30 @@
 import { useMemo, useState } from "react";
-import { AlertTriangle, Bookmark, BookmarkCheck, ChevronDown, ChevronRight, Copy, Download, File, Folder, Magnet, Radio, Send, X } from "lucide-react";
+import {
+  AlertTriangle,
+  Bookmark,
+  Calendar,
+  CheckCircle2,
+  Gauge,
+  Hash,
+  HardDrive,
+  Tag,
+  User,
+  Users,
+  UsersRound,
+  type LucideIcon,
+  BookmarkCheck,
+  ChevronDown,
+  ChevronRight,
+  Copy,
+  Download,
+  File,
+  Folder,
+  Magnet,
+  PanelRight,
+  Radio,
+  Send,
+  X,
+} from "lucide-react";
 import { FLAG_LABEL, formatAge, formatCount, formatSize } from "../lib/format";
 import { leechersOf, seedersOf, type TorrentFile, type TorrentResult } from "../lib/types";
 import { KIND_DOT } from "./ResultsTable";
@@ -42,8 +67,15 @@ export function Inspector({ r, onClose, onOpen, onDownload, onCopy, bookmarked, 
   return (
     <aside className="flex w-[380px] shrink-0 flex-col border-l border-line bg-panel">
       <div className="chrome flex h-7 shrink-0 items-center border-b border-line pl-3 text-[11px] uppercase tracking-wide text-faint">
-        Inspector
-        <button aria-label="Close inspector" onClick={onClose} className="ml-auto flex h-full w-8 items-center justify-center transition-colors duration-150 hover:bg-raised hover:text-fg">
+        <span className="flex items-center gap-1.5">
+          <PanelRight size={12} /> Inspector
+        </span>
+        <button
+          aria-label="Close inspector"
+          title="Close inspector (I)"
+          onClick={onClose}
+          className="ml-auto flex h-full w-8 items-center justify-center transition-colors duration-150 hover:bg-raised hover:text-fg"
+        >
           <X size={13} />
         </button>
       </div>
@@ -63,7 +95,7 @@ export function Inspector({ r, onClose, onOpen, onDownload, onCopy, bookmarked, 
           <button
             onClick={() => onDownload(r)}
             title="Download with Sectator (D)"
-            className="chrome flex h-8 flex-1 items-center justify-center gap-1.5 rounded-md bg-accent text-[12px] font-medium text-bg transition-colors duration-150 hover:bg-[#4fe0f5] focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-accent active:bg-[#1bb8d1]"
+            className="chrome flex h-8 flex-1 items-center justify-center gap-1.5 rounded-md bg-accent text-[12px] font-medium text-on-accent transition-colors duration-150 hover:bg-accent-hi focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-accent active:bg-accent-lo"
           >
             <Download size={13} /> Download
           </button>
@@ -71,33 +103,37 @@ export function Inspector({ r, onClose, onOpen, onDownload, onCopy, bookmarked, 
             onClick={() => onOpen(r)}
             aria-label="Open magnet in the system torrent handler"
             title="Open magnet in the system torrent handler (Enter)"
-            className="chrome flex h-8 w-8 items-center justify-center rounded-md border border-line text-dim transition-colors duration-150 hover:border-[#2e333d] hover:text-fg active:bg-raised"
+            className="chrome flex h-8 w-8 items-center justify-center rounded-md border border-line text-dim transition-colors duration-150 hover:border-edge hover:text-fg active:bg-raised"
           >
             <Magnet size={13} />
           </button>
           <button
             onClick={() => onCopy(r.magnet, "Magnet link")}
-            className="chrome flex h-8 items-center gap-1.5 rounded-md border border-line px-3 text-[12px] text-dim transition-colors duration-150 hover:border-[#2e333d] hover:text-fg active:bg-raised"
+            aria-label="Copy magnet link"
+            title="Copy magnet link (Ctrl+C)"
+            className="chrome flex h-8 w-8 items-center justify-center rounded-md border border-line text-dim transition-colors duration-150 hover:border-edge hover:text-fg active:bg-raised"
           >
-            <Copy size={12} /> Copy
+            <Copy size={13} />
           </button>
+          {client && (
+            <button
+              onClick={() => onSend(r)}
+              aria-label={`Send to ${client}`}
+              title={`Send to ${client}`}
+              className="chrome flex h-8 w-8 items-center justify-center rounded-md border border-line text-dim transition-colors duration-150 hover:border-edge hover:text-fg active:bg-raised"
+            >
+              <Send size={13} />
+            </button>
+          )}
           <button
             onClick={() => onBookmark(r)}
             aria-label={bookmarked ? "Remove bookmark" : "Bookmark"}
             title={bookmarked ? "Remove bookmark" : "Bookmark"}
-            className={`chrome flex h-8 w-8 items-center justify-center rounded-md border border-line transition-colors duration-150 hover:border-[#2e333d] active:bg-raised ${bookmarked ? "text-accent" : "text-dim hover:text-fg"}`}
+            className={`chrome flex h-8 w-8 items-center justify-center rounded-md border border-line transition-colors duration-150 hover:border-edge active:bg-raised ${bookmarked ? "text-accent" : "text-dim hover:text-fg"}`}
           >
             {bookmarked ? <BookmarkCheck size={13} /> : <Bookmark size={13} />}
           </button>
         </div>
-        {client && (
-          <button
-            onClick={() => onSend(r)}
-            className="chrome mt-2 flex h-7 w-full items-center justify-center gap-1.5 rounded-md border border-line text-[12px] text-dim transition-colors duration-150 hover:border-[#2e333d] hover:text-fg active:bg-raised"
-          >
-            <Send size={12} /> Send to {client}
-          </button>
-        )}
 
         {r.flags.length > 0 && (
           <div className="mt-3 space-y-1 rounded-md border border-warn/25 bg-warn/5 p-2">
@@ -109,9 +145,10 @@ export function Inspector({ r, onClose, onOpen, onDownload, onCopy, bookmarked, 
           </div>
         )}
 
-        <dl className="mt-3 grid grid-cols-[88px_1fr] gap-y-1 text-[12px]">
-          <Stat label="Size" value={formatSize(r.size)} />
+        <dl className="mt-3 grid grid-cols-[112px_1fr] gap-y-1 text-[12px]">
+          <Stat icon={HardDrive} label="Size" value={formatSize(r.size)} />
           <Stat
+            icon={Users}
             label="Seed / Leech"
             value={
               <span className="inline-flex items-center gap-1">
@@ -124,15 +161,21 @@ export function Inspector({ r, onClose, onOpen, onDownload, onCopy, bookmarked, 
               </span>
             }
           />
-          {(r.live?.completed ?? r.completed) != null && <Stat label="Completed" value={formatCount(r.live?.completed ?? r.completed)} />}
-          <Stat label="Uploaded" value={r.uploadedAt ? `${new Date(r.uploadedAt * 1000).toISOString().slice(0, 10)} · ${formatAge(r.uploadedAt)} ago` : "—"} />
-          {r.uploader && <Stat label="Uploader" value={<ByLink name={r.uploader} suffix={r.verifiedUploader ? " ✓" : ""} onBy={onBy} />} />}
-          {r.meta.group && <Stat label="Group" value={<ByLink name={r.meta.group} onBy={onBy} />} />}
-          <Stat label="Category" value={r.category ?? "—"} />
-          <Stat label="Score" value={r.score.toFixed(3)} />
-          <dt className="text-faint">Infohash</dt>
+          {(r.live?.completed ?? r.completed) != null && <Stat icon={CheckCircle2} label="Completed" value={formatCount(r.live?.completed ?? r.completed)} />}
+          <Stat icon={Calendar} label="Uploaded" value={r.uploadedAt ? `${new Date(r.uploadedAt * 1000).toISOString().slice(0, 10)} · ${formatAge(r.uploadedAt)} ago` : "—"} />
+          {r.uploader && <Stat icon={User} label="Uploader" value={<ByLink name={r.uploader} suffix={r.verifiedUploader ? " ✓" : ""} onBy={onBy} />} />}
+          {r.meta.group && <Stat icon={UsersRound} label="Group" value={<ByLink name={r.meta.group} onBy={onBy} />} />}
+          <Stat icon={Tag} label="Category" value={r.category ?? "—"} />
+          <Stat icon={Gauge} label="Score" value={r.score.toFixed(3)} />
+          <dt className="flex items-center gap-1.5 text-faint">
+            <Hash size={11} /> Infohash
+          </dt>
           <dd>
-            <button onClick={() => onCopy(r.infoHash, "Infohash")} title="Copy infohash" className="num break-all text-left text-[11px] text-dim transition-colors duration-150 hover:text-accent">
+            <button
+              onClick={() => onCopy(r.infoHash, "Infohash")}
+              title="Copy infohash"
+              className="num break-all text-left text-[11px] text-dim transition-colors duration-150 hover:text-accent"
+            >
               {r.infoHash}
             </button>
           </dd>
@@ -179,10 +222,12 @@ function ByLink({ name, suffix = "", onBy }: { name: string; suffix?: string; on
   );
 }
 
-function Stat({ label, value }: { label: string; value: React.ReactNode }) {
+function Stat({ icon: Icon, label, value }: { icon: LucideIcon; label: string; value: React.ReactNode }) {
   return (
     <>
-      <dt className="text-faint">{label}</dt>
+      <dt className="flex items-center gap-1.5 text-faint">
+        <Icon size={11} /> {label}
+      </dt>
       <dd className="num text-fg">{value}</dd>
     </>
   );
@@ -192,7 +237,10 @@ function Section({ title, children, defaultOpen = true }: { title: string; child
   const [open, setOpen] = useState(defaultOpen);
   return (
     <section className="mt-3 border-t border-line pt-2">
-      <button onClick={() => setOpen(!open)} className="chrome flex w-full items-center gap-1 text-[11px] uppercase tracking-wide text-faint transition-colors duration-150 hover:text-fg">
+      <button
+        onClick={() => setOpen(!open)}
+        className="chrome flex w-full items-center gap-1 text-[11px] uppercase tracking-wide text-faint transition-colors duration-150 hover:text-fg"
+      >
         {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
         {title}
       </button>

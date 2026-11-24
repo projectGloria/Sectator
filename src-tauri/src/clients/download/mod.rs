@@ -5,8 +5,9 @@
 //! exist), so users who only search never open a listening port.
 
 pub mod ffi;
+pub mod icon;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
@@ -14,6 +15,8 @@ use cxx::UniquePtr;
 use serde::{Deserialize, Serialize};
 
 use ffi::bridge as lt;
+
+use crate::parser::kind::{classify, Content};
 
 const RESUME_EXT: &str = "fastresume";
 
@@ -88,6 +91,9 @@ pub struct Download {
     pub error: Option<String>,
     pub added_at: i64,
     pub completed_at: Option<i64>,
+    /// What the content is (`kind`) and its main extension (`mainExt`), for the UI icon.
+    #[serde(flatten)]
+    pub content: Content,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -167,6 +173,7 @@ impl From<&lt::TorrentStatus> for Download {
             error: Some(s.error.clone()).filter(|e| !e.is_empty()),
             added_at: s.added_time,
             completed_at: Some(s.completed_time).filter(|t| *t > 0),
+            content: classify(&s.name, []),
         }
     }
 }
@@ -189,6 +196,8 @@ pub struct Downloader {
     removed: Mutex<HashSet<String>>,
     /// Resumed by hand after the ratio limit stopped them.
     ratio_exempt: Mutex<HashSet<String>>,
+    /// Content kind per hash, worked out once the file list is known.
+    kinds: Mutex<HashMap<String, Content>>,
 }
 
 impl Downloader {
@@ -202,6 +211,7 @@ impl Downloader {
             init: Mutex::new(()),
             removed: Mutex::new(HashSet::new()),
             ratio_exempt: Mutex::new(HashSet::new()),
+            kinds: Mutex::new(HashMap::new()),
         }
     }
 
@@ -300,7 +310,24 @@ impl Downloader {
     }
 
     pub fn list(&self) -> Vec<Download> {
-        self.session.get().map(|s| s.list().iter().map(Download::from).collect()).unwrap_or_default()
+        let Some(ses) = self.session.get().and_then(|s| s.as_ref()) else { return Vec::new() };
+        let mut kinds = self.kinds.lock().unwrap();
+        ses.list()
+            .iter()
+            .map(|s| {
+                let mut d = Download::from(s);
+                if let Some(c) = kinds.get(&d.info_hash) {
+                    d.content = c.clone();
+                } else if s.has_metadata {
+                    let files = ses.files(&d.info_hash);
+                    if !files.is_empty() {
+                        d.content = classify(&d.name, files.iter().map(|f| (f.path.as_str(), f.size)));
+                        kinds.insert(d.info_hash.clone(), d.content.clone());
+                    }
+                }
+                d
+            })
+            .collect()
     }
 
     pub fn get(&self, hash: &str) -> Option<Download> {
@@ -337,6 +364,7 @@ impl Downloader {
         Self::check(self.running()?.remove(hash, delete_files))?;
         self.removed.lock().unwrap().insert(hash.to_string());
         self.ratio_exempt.lock().unwrap().remove(hash);
+        self.kinds.lock().unwrap().remove(hash);
         match std::fs::remove_file(self.resume_path(hash)) {
             Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.into()),
             _ => Ok(()),

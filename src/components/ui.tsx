@@ -1,11 +1,12 @@
 // Custom-styled form controls with explicit hover / active / focus-visible / disabled states.
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from "react";
+import type { LucideIcon } from "lucide-react";
 
 type Tone = "default" | "primary" | "danger" | "ghost";
 
 const TONE: Record<Tone, string> = {
-  default: "border border-line bg-raised text-fg hover:border-[#2e333d] hover:bg-[#1b1f27] active:bg-line",
-  primary: "bg-accent font-medium text-bg hover:bg-[#4fe0f5] active:bg-[#1bb8d1]",
+  default: "border border-line bg-raised text-fg hover:border-edge hover:bg-lift active:bg-line",
+  primary: "bg-accent font-medium text-on-accent hover:bg-accent-hi active:bg-accent-lo",
   danger: "border border-bad/30 text-bad hover:bg-bad/10 active:bg-bad/20",
   ghost: "text-dim hover:bg-raised hover:text-fg active:bg-line",
 };
@@ -25,7 +26,7 @@ export function TextInput({ className = "", mono, ...rest }: InputHTMLAttributes
     <input
       spellCheck={false}
       {...rest}
-      className={`h-7 min-w-0 select-text rounded-md border border-line bg-bg px-2 text-[12px] outline-none transition-colors duration-150 placeholder:text-faint hover:border-[#2e333d] focus-visible:border-accent/60 disabled:opacity-40 ${mono ? "num" : ""} ${className}`}
+      className={`h-7 min-w-0 select-text rounded-md border border-line bg-bg px-2 text-[12px] outline-none transition-colors duration-150 placeholder:text-faint hover:border-edge focus-visible:border-accent/60 disabled:opacity-40 ${mono ? "num" : ""} ${className}`}
       style={{ outline: "none" }}
     />
   );
@@ -56,7 +57,7 @@ export function Toggle({ checked, onChange, label, disabled }: { checked: boolea
       aria-label={label}
       disabled={disabled}
       onClick={() => onChange(!checked)}
-      className={`relative h-4 w-7 shrink-0 rounded-full transition-colors duration-150 disabled:opacity-40 ${checked ? "bg-accent hover:bg-[#4fe0f5]" : "bg-line hover:bg-[#2e333d]"}`}
+      className={`relative h-4 w-7 shrink-0 rounded-full transition-colors duration-150 disabled:opacity-40 ${checked ? "bg-accent hover:bg-accent-hi" : "bg-line hover:bg-edge"}`}
     >
       <span className={`absolute top-0.5 h-3 w-3 rounded-full bg-fg transition-transform duration-150 ${checked ? "translate-x-3.5" : "translate-x-0.5"}`} />
     </button>
@@ -64,16 +65,17 @@ export function Toggle({ checked, onChange, label, disabled }: { checked: boolea
 }
 
 /** A segmented control in place of a native <select>. */
-export function Segmented<T extends string>({ value, options, onChange }: { value: T; options: [T, string][]; onChange: (v: T) => void }) {
+export function Segmented<T extends string>({ value, options, onChange }: { value: T; options: [T, string, LucideIcon?][]; onChange: (v: T) => void }) {
   return (
     <div className="chrome inline-flex h-7 rounded-md border border-line p-0.5">
-      {options.map(([v, label]) => (
+      {options.map(([v, label, Icon]) => (
         <button
           key={v}
           type="button"
           onClick={() => onChange(v)}
-          className={`rounded px-2 text-[11.5px] transition-colors duration-150 ${v === value ? "bg-raised text-fg" : "text-dim hover:text-fg active:bg-line"}`}
+          className={`flex items-center gap-1.5 rounded px-2 text-[11.5px] transition-colors duration-150 focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent ${v === value ? "bg-raised text-fg" : "text-dim hover:text-fg active:bg-line"}`}
         >
+          {Icon && <Icon size={12} className={v === value ? "text-accent" : ""} />}
           {label}
         </button>
       ))}
